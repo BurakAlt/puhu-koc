@@ -67,6 +67,16 @@ await new Promise(r => setTimeout(r, 1200));
 await move(mate);
 assert.match(await say(), /Çözdün/, 'mate solves: ' + await say());
 
+// 3b. Ask Puhu: typed question and position danger chip
+await page.type('#askIn', 'Çatal nedir?');
+await page.click('#askForm button[type="submit"]');
+assert.match(await say(), /^Çatal:/, 'glossary answer: ' + await say());
+await page.click('[data-ask="tehlike"]');
+assert.ok((await say()).length > 20, 'danger report spoken');
+await page.type('#askIn', 'uzay gemisi');
+await page.click('#askForm button[type="submit"]');
+assert.match(await say(), /henüz bilmiyorum/);
+
 // 4. Home reflects progress
 await page.click('[data-go="bugun"]');
 const steps = await page.$$eval('#steps li span', s => s.map(x => x.textContent));

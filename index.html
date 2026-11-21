@@ -124,6 +124,10 @@
   .chip[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: #fff; }
   .chip .rec { color: var(--sun-d); }
   .chip[aria-pressed="true"] .rec { color: var(--sun); }
+  .ask { display: grid; gap: 8px; border-top: 2px solid var(--page); padding-top: 14px; }
+  .ask label { font-weight: 700; }
+  .ask-row { display: flex; gap: 8px; }
+  .ask input { flex: 1; min-width: 0; font: inherit; padding: 11px 14px; border: 2px solid var(--line); border-radius: 12px; }
   .engine { font-size: 13px; color: var(--ink-2); margin: 0; min-height: 1.2em; }
 
   /* ---------- report ---------- */
@@ -244,6 +248,15 @@
           <button class="btn" id="bShow">Cevabı göster</button>
           <button class="btn primary" id="bNext">Sıradaki</button>
         </div>
+        <form class="ask" id="askForm">
+          <label for="askIn">Puhu’ya sor</label>
+          <div class="ask-row"><input id="askIn" placeholder="Örneğin: çatal nedir?" autocomplete="off"><button class="btn" type="submit">Sor</button></div>
+          <div class="chips">
+            <button class="chip" type="button" data-ask="tehlike">Burada tehlike var mı?</button>
+            <button class="chip" type="button" data-ask="nasıl düşünmeliyim">Nasıl düşünmeliyim?</button>
+            <button class="chip" type="button" data-ask="pat">Pat nedir?</button>
+          </div>
+        </form>
         <p class="engine" id="engine"></p>
       </div>
     </section>
@@ -413,6 +426,40 @@ function sayable(html) {
       if (sfx) w.push(sfx === '#' ? 'mat' : 'şah');
       return w.join(' ');
     });
+}
+
+// "Puhu'ya sor": kid-level glossary, matched by keyword (no AI, works offline).
+const SOZLUK = [
+  [['pat'], 'Pat: Sırası gelen oyuncunun hiç hamlesi yok ama şahı tehdit altında değil. Oyun berabere biter. Kazanırken rakip şaha bir kaçış karesi bırak.'],
+  [['mat'], 'Mat: Şah tehdit altında ve hiçbir hamle onu kurtaramıyor. Mat yapan oyunu kazanır.'],
+  [['çatal'], 'Çatal: Bir taşın aynı anda iki rakip taşa saldırması. En çok at yapar. Rakip ikisini birden kurtaramaz.'],
+  [['açmaz'], 'Açmaz: Öndeki taş kıpırdarsa arkasındaki daha değerli taş açıkta kalır. O yüzden öndeki taş oynayamaz.'],
+  [['şiş'], 'Şiş: Açmazın tersi. Öndeki değerli taş kaçınca arkasındaki taş alınır.'],
+  [['rok'], 'Rok: Şah kaleye doğru iki kare gider, kale de şahın öbür yanına geçer. Şah ve kale daha önce hiç oynamamış olmalı, şah tehdit altında olmamalı.'],
+  [['geçerken', 'en passant'], 'Geçerken alma: Rakip piyon iki kare ilerleyip senin piyonunun yanına gelirse, hemen sonraki hamlede onu bir kare ilerlemiş gibi alabilirsin.'],
+  [['terfi', 'son sıra'], 'Terfi: Piyon son sıraya varınca vezir, kale, fil ya da ata dönüşür. Genelde vezir seçilir.'],
+  [['değer', 'puan', 'takas'], 'Taş değerleri: piyon 1, at 3, fil 3, kale 5, vezir 9. Takasta daha değerli taşı almaya çalış.'],
+  [['açılış', 'başla'], 'Açılışta üç kural: Merkezi piyonlarla tut, atları ve filleri çabuk çıkar, rok yap. Vezirini çok erken çıkarma.'],
+  [['asılı', 'korumasız', 'bedava'], 'Asılı taş: Saldırı altında ve onu koruyan hiçbir taş yok. Rakibin asılı taşını al, kendi asılı taşını kurtar.'],
+  [['tehdit', 'nasıl düşün', 'şat', 'hata'], 'Her hamleden önce ŞAT: Şah çekebilir miyim? Alabileceğim taş var mı? Rakip neyi Tehdit ediyor?'],
+  [['oyun sonu', 'son oyun'], 'Oyun sonunda şahını oyuna sok, piyonlarını ilerlet. Rakibin sadece şahı kaldıysa pat yapmamaya dikkat et.'],
+];
+const SOZLUK_KONULAR = 'pat, mat, çatal, açmaz, şiş, rok, geçerken alma, terfi, taş değerleri, açılış, asılı taş, oyun sonu';
+function answer(q) {
+  const t = q.toLocaleLowerCase('tr');
+  const hits = SOZLUK.filter(([keys]) => keys.some(k => t.includes(k))).map(([, s]) => s);
+  return hits.length ? hits : null;
+}
+
+// What is in danger in this position, for the side to move.
+function dangerReport(fen) {
+  const c = new Chess(fen), me = c.turn(), opp = me === 'w' ? 'b' : 'w';
+  const out = { inCheck: c.inCheck(), mine: hangingPieces(fen, me).map(h => h.sq), theirs: hangingPieces(fen, opp).map(h => h.sq), mateThreat: null };
+  if (out.inCheck) return out;
+  const f = fen.split(' '); f[1] = opp; f[3] = '-';                     // "what if it were their move?"
+  let o; try { o = new Chess(f.join(' ')); } catch { return out; }
+  for (const m of o.moves({ verbose: true })) { o.move(m); const mate = o.isCheckmate(); o.undo(); if (mate) { out.mateThreat = m.to; break; } }
+  return out;
 }
 
 // Seconds spent on each ply from lichess clocks (centiseconds left after each ply).
@@ -906,6 +953,26 @@ function patMove(uci) {
   else coachSay(`<b>${trSan(m.san)}</b> mat değil. Tekrar dene!`, 'sad');
   setTimeout(() => setPos(P.fen), 1000);
 }
+
+// ---------- Puhu'ya sor ----------
+const sqList = a => a.length > 1 ? `${a.slice(0, -1).join(', ')} ve ${a.at(-1)} karelerindeki taşların` : `${a[0]} karesindeki taşın`;
+function ask(q) {
+  q = q.trim();
+  if (!q) return;
+  if (q === 'tehlike') {
+    if (S.mode === 'avci' && !H.done) return coachSay('Bunu bulmak senin görevin! Takılırsan İpucu düğmesine bas.', 'think');
+    const r = dangerReport(B.fen()), parts = [];
+    if (r.inCheck) parts.push('Şahın tehdit altında! Önce onu kurtar.');
+    if (r.mateThreat) parts.push(`Dikkat! Rakip ${r.mateThreat} karesine gelirse MAT yapar. Önce bunu engelle.`);
+    if (r.mine.length) parts.push(`${sqList(r.mine).replace(/^./, c => c.toLocaleUpperCase('tr'))} tehlikede.`);
+    if (r.theirs.length) parts.push(`Rakibin ${sqList(r.theirs).replace('taşların', 'taşları').replace('taşın', 'taşı')} korumasız.`);
+    return coachSay(parts.join(' ') || 'Şu an asılı taş ya da mat tehdidi görmüyorum. Şah çekebilir misin, bir bak.', parts.length ? 'wow' : 'happy');
+  }
+  const a = answer(q);
+  coachSay(a ? a.join(' ') : `Bunu henüz bilmiyorum. Bana şunları sorabilirsin: ${SOZLUK_KONULAR}.`, a ? 'happy' : 'think');
+}
+$('askForm').onsubmit = e => { e.preventDefault(); ask($('askIn').value); $('askIn').value = ''; };
+document.querySelectorAll('[data-ask]').forEach(b => b.onclick = () => ask(b.dataset.ask));
 
 // ---------- Karnem ----------
 function renderKarne() {

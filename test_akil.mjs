@@ -11,7 +11,7 @@ const block = html.split('// AKIL-BASLA')[1].split('// AKIL-BITIR')[0];
 const dir = mkdtempSync(join(tmpdir(), 'akil-'));
 const file = join(dir, 'akil.mjs');
 const chessUrl = pathToFileURL(join(process.cwd(), 'node_modules/chess.js/dist/esm/chess.js')).href;
-writeFileSync(file, `import { Chess } from '${chessUrl}';\n${block}\nexport { explain, hangingPieces, leitnerNext, pickTheme, makeStalemateTrap, thinkTimes, sayable };`);
+writeFileSync(file, `import { Chess } from '${chessUrl}';\n${block}\nexport { explain, hangingPieces, leitnerNext, pickTheme, makeStalemateTrap, thinkTimes, sayable, answer, dangerReport };`);
 const A = await import(pathToFileURL(file).href);
 
 const cases = [
@@ -66,5 +66,18 @@ assert.equal(A.sayable('Burada <b>Fxd7</b> oynadın.'), 'Burada fil alır d yedi
 assert.equal(A.sayable('Ae5 ile, e4 karesine'), 'at e beş ile, e dört karesine');
 assert.equal(A.sayable('Vh5# ve O-O, exd5+'), 'vezir h beş mat ve kısa rok, e alır d beş şah');
 assert.equal(A.sayable('Şah çekebilir miyim? Kale!'), 'Şah çekebilir miyim? Kale!');
+
+// ask Puhu: glossary by keyword, Turkish casing, unknown -> null
+assert.match(A.answer('Çatal nedir?')[0], /^Çatal:/);
+assert.match(A.answer('ROK NASIL YAPILIR')[0], /^Rok:/);
+assert.equal(A.answer('uzay gemisi'), null);
+
+// danger report for the side to move
+const d1 = A.dangerReport('4k3/8/8/8/8/2b5/8/R6K w - - 0 1');          // my rook a1 hangs to the bishop
+assert.deepEqual(d1.mine, ['a1']); assert.deepEqual(d1.theirs, []); assert.equal(d1.mateThreat, null);
+const d2 = A.dangerReport('6k1/8/8/8/8/8/5PPP/r5K1 w - - 0 1');        // in check: no mate-threat scan
+assert.equal(d2.inCheck, true);
+const d3 = A.dangerReport('3r2k1/8/8/8/8/8/5PPP/6K1 w - - 0 1');       // Rd1# threatened on my back rank
+assert.equal(d3.mateThreat, 'd1');
 
 console.log('OK: all brain tests pass');
