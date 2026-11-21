@@ -77,6 +77,19 @@ await page.type('#askIn', 'uzay gemisi');
 await page.click('#askForm button[type="submit"]');
 assert.match(await say(), /henüz bilmiyorum/);
 
+// 3c. Parent dashboard: gate rejects a wrong answer, accepts the right one, KPIs render
+await page.click('[data-go="veli"]');
+await page.type('#gateIn', '1');
+await page.click('#veliGate button');
+assert.match(await page.$eval('#gateMsg', e => e.textContent), /yanlış/);
+await new Promise(r => setTimeout(r, 1100));
+const [ga, gb] = (await page.$eval('#gateQ', e => e.textContent)).match(/\d+/g).map(Number);
+await page.type('#gateIn', String(ga * gb));
+await page.click('#veliGate button');
+await page.waitForFunction(() => document.querySelectorAll('#veliBody .kpi').length === 8, { timeout: 15000 });
+assert.equal(await page.$$eval('#veliBody svg.chart', s => s.length) >= 1, true, 'weekly chart drawn');
+await page.screenshot({ path: new URL('./veli_e2e.png', import.meta.url).pathname.replace(/^\//, ''), fullPage: true });
+
 // 4. Home reflects progress
 await page.click('[data-go="bugun"]');
 const steps = await page.$$eval('#steps li span', s => s.map(x => x.textContent));

@@ -152,6 +152,24 @@
   th { color: var(--ink-2); font-weight: 600; }
   td.n, th.n { text-align: right; width: 48px; }
 
+  /* ---------- parent dashboard ---------- */
+  .gate { max-width: 460px; margin-top: 22px; display: grid; gap: 10px; }
+  .gate label { font: 800 28px var(--display); }
+  .gate[hidden], #veliBody[hidden] { display: none; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 12px; margin-top: 22px; max-width: 1000px; }
+  .kpi { background: var(--sheet); border: 2px solid var(--line); border-radius: 16px; padding: 14px 16px; display: grid; gap: 2px; }
+  .kpi span { color: var(--ink-2); font-size: 14px; }
+  .kpi b { font: 800 32px/1.1 var(--display); }
+  .kpi small { color: var(--ink-2); font-size: 13px; }
+  .notes { max-width: 1000px; margin-top: 18px; background: #FFF4CC; border-left: 6px solid var(--sun); border-radius: 4px 14px 14px 4px; padding: 12px 18px; }
+  .notes ul { margin: 6px 0 0; padding-left: 20px; }
+  .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 14px; margin-top: 14px; max-width: 1000px; }
+  .charts .sheet { margin-top: 0; }
+  .chart { width: 100%; height: auto; display: block; margin-top: 8px; }
+  .chart text { font-family: var(--body); font-size: 17px; }
+  .chart .l { fill: var(--ink-2); }
+  .chart .v { fill: var(--ink); font-weight: 700; }
+
   /* ---------- login ---------- */
   .login { min-height: 100vh; display: grid; place-content: center; justify-items: center; text-align: center; gap: 16px; padding: 24px 16px; }
   .login[hidden], body.locked .app { display: none; }
@@ -201,6 +219,7 @@
       <button data-go="avci"><span class="ic">◎</span>Tehdit avı</button>
       <button data-go="bulmaca"><span class="ic">♞</span>Bulmaca</button>
       <button data-go="karne"><span class="ic">▤</span>Karnem</button>
+      <button data-go="veli"><span class="ic">◐</span>Ebeveyn</button>
     </nav>
     <div class="me">
       <div><b id="starTotal">0</b> yıldız · <span id="rankName">Piyon</span></div>
@@ -259,6 +278,17 @@
         </form>
         <p class="engine" id="engine"></p>
       </div>
+    </section>
+
+    <section class="view" id="v-veli" hidden>
+      <h1>Ebeveyn paneli</h1>
+      <form class="gate" id="veliGate">
+        <p>Bu bölüm ebeveynler için. Devam etmek için soruyu cevaplayın.</p>
+        <label for="gateIn" id="gateQ"></label>
+        <div class="ask-row"><input id="gateIn" inputmode="numeric" autocomplete="off"><button class="btn primary" type="submit">Aç</button></div>
+        <p class="sub" id="gateMsg"></p>
+      </form>
+      <div id="veliBody" hidden></div>
     </section>
 
     <section class="view" id="v-karne" hidden>
@@ -462,6 +492,37 @@ function dangerReport(fen) {
   return out;
 }
 
+// Parent dashboard numbers from Lichess games (local time, weeks start on Monday).
+function weekStart(ts) { const d = new Date(ts); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - (d.getDay() + 6) % 7); return d.getTime(); }
+function parentMetrics(games, me, now, nWeeks = 12) {
+  const WEEK = 7 * 864e5, first = weekStart(now) - (nWeeks - 1) * WEEK;
+  const weeks = Array.from({ length: nWeeks }, (_, i) => ({ start: first + i * WEEK, games: 0, minutes: 0, W: 0, L: 0, D: 0 }));
+  const last30 = { total: 0, late: 0, fast: 0 };
+  const colorOfMe = g => g.players.white.user?.id === me ? 'white' : 'black';
+  for (const g of games) {
+    const i = Math.round((weekStart(g.createdAt) - first) / WEEK);              // round: DST shifts by an hour
+    if (i >= 0 && i < nWeeks) {
+      const w = weeks[i], c = colorOfMe(g);
+      w.games++; w.minutes += Math.max(0, (g.lastMoveAt - g.createdAt) / 60e3);
+      w[!g.winner ? 'D' : g.winner === c ? 'W' : 'L']++;
+    }
+    if (now - g.createdAt <= 30 * 864e5) {
+      const h = new Date(g.createdAt).getHours();
+      last30.total++;
+      if (h >= 22 || h < 6) last30.late++;
+      if (['bullet', 'blitz', 'ultraBullet'].includes(g.speed)) last30.fast++;
+    }
+  }
+  const bl = games.filter(g => g.players[colorOfMe(g)].analysis).sort((a, b) => b.createdAt - a.createdAt)
+    .map(g => g.players[colorOfMe(g)].analysis.blunder);
+  const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
+  return {
+    weeks, thisWeek: weeks[nWeeks - 1], lastWeek: weeks[nWeeks - 2],
+    last30: { total: last30.total, late: last30.late, fastShare: last30.total ? last30.fast / last30.total : 0 },
+    blunders: { recent: avg(bl.slice(0, 10)), before: avg(bl.slice(10, 20)), n: bl.length },
+  };
+}
+
 // Seconds spent on each ply from lichess clocks (centiseconds left after each ply).
 function thinkTimes(g) {
   const c = g.clocks || [], inc = g.clock?.increment || 0;
@@ -587,7 +648,8 @@ function go(mode) {
   S.mode = mode;
   history.replaceState(null, '', '#' + mode);
   document.querySelectorAll('[data-go]').forEach(b => b.dataset.go === mode ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current'));
-  $('v-bugun').hidden = mode !== 'bugun'; $('v-karne').hidden = mode !== 'karne'; $('v-train').hidden = !MODES[mode];
+  $('v-bugun').hidden = mode !== 'bugun'; $('v-karne').hidden = mode !== 'karne'; $('v-veli').hidden = mode !== 'veli'; $('v-train').hidden = !MODES[mode];
+  if (mode === 'veli') openVeli();
   if (!MODES[mode]) { speechSynthesis?.cancel(); return; }
   $('modeTitle').textContent = MODES[mode]; drawPill();
   $('chips').hidden = mode !== 'bulmaca';
@@ -679,6 +741,7 @@ function show(user, games) {
   homeSay(insight(), 'happy');
   renderHome(); renderKarne();
   if (first && MODES[S.mode]) go(S.mode);
+  if (S.mode === 'veli' && sessionStorage.getItem('veli')) renderVeli();
 }
 async function load() {
   S.me = $('user').value.trim().toLowerCase();
@@ -974,6 +1037,110 @@ function ask(q) {
 $('askForm').onsubmit = e => { e.preventDefault(); ask($('askIn').value); $('askIn').value = ''; };
 document.querySelectorAll('[data-ask]').forEach(b => b.onclick = () => ask(b.dataset.ask));
 
+// ---------- Ebeveyn paneli ----------
+// Time in Puhu: half a minute for every 30 s the page is visible.
+setInterval(() => {
+  if (document.visibilityState !== 'visible' || !S.loaded) return;
+  const m = store.get('dakika', {}); m[today()] = (m[today()] || 0) + 0.5; store.set('dakika', m);
+}, 30000);
+
+let gateAnswer = 0;
+function openVeli() {
+  if (sessionStorage.getItem('veli')) { $('veliGate').hidden = true; $('veliBody').hidden = false; return renderVeli(); }
+  const a = 6 + Math.floor(Math.random() * 4), b = 6 + Math.floor(Math.random() * 4);
+  gateAnswer = a * b; $('gateQ').textContent = `${a} × ${b} kaç eder?`; $('gateIn').value = ''; $('gateMsg').textContent = '';
+  $('veliGate').hidden = false; $('veliBody').hidden = true;
+}
+$('veliGate').onsubmit = e => {
+  e.preventDefault();
+  if (+$('gateIn').value === gateAnswer) { sessionStorage.setItem('veli', '1'); openVeli(); }
+  else { $('gateMsg').textContent = 'Cevap yanlış. Yeni soru geldi.'; setTimeout(openVeli, 900); }
+};
+
+function barSvg(items) {
+  const W = 640, H = 170, base = H - 22, bw = W / items.length, max = Math.max(1, ...items.map(i => i.value));
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Haftalık oyun sayısı"><line x1="0" x2="${W}" y1="${base}" y2="${base}" stroke="var(--line)"/>` +
+    items.map((it, i) => {
+      const h = it.value / max * (base - 24), x = i * bw + 5, w = bw - 10, cx = x + w / 2;
+      return `<g><title>${it.title}</title><rect x="${x}" y="${base - h}" width="${w}" height="${h}" rx="4" fill="var(--plum)"/>` +
+        (it.value ? `<text x="${cx}" y="${base - h - 6}" text-anchor="middle" class="v">${it.value}</text>` : '') +
+        (i % 2 === 1 || i === items.length - 1 ? `<text x="${cx}" y="${H - 5}" text-anchor="middle" class="l">${it.label}</text>` : '') + '</g>';
+    }).join('') + '</svg>';
+}
+function lineSvg(pts, name) {
+  if (pts.length < 2) return '<p class="sub">Bu dönemde yeterli veri yok.</p>';
+  const W = 640, H = 150, L = 44, R = 56, vs = pts.map(p => p.v), lo = Math.min(...vs), hi = Math.max(...vs), span = Math.max(hi - lo, 40);
+  const t0 = pts[0].t, t1 = pts.at(-1).t;
+  const X = t => L + (t - t0) / Math.max(1, t1 - t0) * (W - L - R), Y = v => 10 + (hi + span * 0.1 - v) / (span * 1.2) * (H - 34);
+  const d = pts.map((p, i) => `${i ? 'L' : 'M'}${X(p.t).toFixed(1)},${Y(p.v).toFixed(1)}`).join('');
+  const last = pts.at(-1);
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${name}">` +
+    `<text x="0" y="${Y(hi) + 4}" class="l">${hi}</text><text x="0" y="${Y(lo) + 4}" class="l">${lo}</text>` +
+    `<line x1="${L}" x2="${W - R}" y1="${Y(lo)}" y2="${Y(lo)}" stroke="var(--line)" stroke-dasharray="3 4"/>` +
+    `<path d="${d}" fill="none" stroke="var(--plum)" stroke-width="2" stroke-linejoin="round"/>` +
+    pts.map(p => `<circle cx="${X(p.t).toFixed(1)}" cy="${Y(p.v).toFixed(1)}" r="7" fill="transparent"><title>${new Date(p.t).toLocaleDateString('tr-TR')}: ${p.v}</title></circle>`).join('') +
+    `<circle cx="${X(last.t)}" cy="${Y(last.v)}" r="4" fill="var(--plum)"/><text x="${X(last.t) + 8}" y="${Y(last.v) + 4}" class="v">${last.v}</text>` +
+    `<text x="${L}" y="${H - 4}" class="l">${new Date(t0).toLocaleDateString('tr-TR')}</text><text x="${W - R}" y="${H - 4}" text-anchor="end" class="l">${new Date(t1).toLocaleDateString('tr-TR')}</text></svg>`;
+}
+const fmtDelta = (cur, prev, unit = '') => prev == null ? '' : `geçen hafta ${prev}${unit}`;
+
+async function renderVeli() {
+  if (!S.loaded) { $('veliBody').innerHTML = '<p class="sub">Oyunlar yükleniyor…</p>'; return; }
+  const now = Date.now(), m = parentMetrics(S.games, S.me, now), ws = weekStart(now);
+  S.rh ??= await fetch(`https://lichess.org/api/user/${encodeURIComponent(S.me)}/rating-history`, { headers: auth() }).then(r => r.ok ? r.json() : []).catch(() => []);
+  if (S.pz === undefined) {
+    S.pz = !store.get('token', null) ? 'giris' : await fetch('https://lichess.org/api/puzzle/activity?max=300', { headers: { Accept: 'application/x-ndjson', ...auth() } })
+      .then(async r => r.ok ? (await r.text()).trim().split('\n').filter(Boolean).map(l => JSON.parse(l)) : 'izin').catch(() => 'izin');
+  }
+  // Rating line: Lichess rating history, or (if unavailable) the rating after each of his own games.
+  const fromHistory = name => (S.rh.find(s => s.name === name)?.points || []).map(([y, mo, d, v]) => ({ t: new Date(y, mo, d).getTime(), v }));
+  const fromGames = speed => S.games.filter(g => g.speed === speed && g.rated && g.players[colorOf(g)].rating)
+    .map(g => ({ t: g.createdAt, v: g.players[colorOf(g)].rating + (g.players[colorOf(g)].ratingDiff || 0) })).sort((a, b) => a.t - b.t);
+  const allRapid = fromHistory('Rapid').length ? fromHistory('Rapid') : fromGames('rapid');
+  const series = name => (name === 'Rapid' ? allRapid : fromHistory(name)).filter(p => now - p.t <= 183 * 864e5);
+  const rapid = series('Rapid'), rapidNow = S.user.perfs.rapid?.rating;
+  const rapid30 = allRapid.filter(p => now - p.t > 30 * 864e5).at(-1);
+  const wsKey = new Date(ws).toLocaleDateString('sv-SE');                  // keys are local YYYY-MM-DD, compare as strings
+  const sumSince = obj => Object.entries(obj).filter(([d]) => d >= wsKey).reduce((a, [, v]) => a + v, 0);
+  const stars = sumSince(starsAll()), days = Object.entries(starsAll()).filter(([d, v]) => v && d >= wsKey).length;
+  const mins = Math.round(sumSince(store.get('dakika', {})));
+  const pzWeek = Array.isArray(S.pz) ? S.pz.filter(p => p.date >= ws) : null;
+  const b = m.blunders, tw = m.thisWeek, lw = m.lastWeek;
+
+  const kpi = (label, value, note) => `<div class="kpi"><span>${label}</span><b>${value}</b><small>${note}</small></div>`;
+  const notes = [];
+  if (m.last30.total && m.last30.fastShare > 0.5) notes.push(`Son 30 günde oyunlarının %${Math.round(m.last30.fastShare * 100)}'i hızlı (bullet/blitz). Düşünmeye vakit kalan 15+10 rapid oyunlar gelişime daha çok katkı verir.`);
+  if (m.last30.late >= 3) notes.push(`Son 30 günde ${m.last30.late} oyun gece 22:00 ile sabah 06:00 arasında oynanmış.`);
+  if (tw.games >= 25) notes.push(`Bu hafta ${tw.games} oyun oynadı. Çok oyun az inceleme demek olabilir; Puhu’daki “Hatalarım” bölümüne zaman ayırması iyi olur.`);
+  if (b.recent != null && b.before != null) notes.push(b.recent < b.before ? `Güzel haber: son 10 analizli oyunda büyük hata ortalaması ${b.recent.toFixed(1)}, önceki 10 oyunda ${b.before.toFixed(1)}. Azalıyor.` : `Son 10 analizli oyunda büyük hata ortalaması ${b.recent.toFixed(1)}, önceki 10 oyunda ${b.before.toFixed(1)}. Henüz düşüş yok.`);
+  if (b.n < 10) notes.push('Hata eğilimini ölçmek için oyunların analiz edilmesi gerekiyor. Lichess’te oyun bitince “Bilgisayar analizi iste” demesini teşvik edin.');
+
+  const recent = S.games.slice(0, 10).map(g => {
+    const c = colorOf(g), opp = g.players[c === 'white' ? 'black' : 'white'], r = resultOf(g);
+    return `<tr><td>${new Date(g.createdAt).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' })}</td><td>${g.speed}</td><td>${opp.user?.name || 'bilgisayar'} ${opp.rating ? `(${opp.rating})` : ''}</td><td>${{ W: 'Kazandı', L: 'Kaybetti', D: 'Berabere' }[r]}</td><td class="n">${Math.round((g.lastMoveAt - g.createdAt) / 60e3)} dk</td><td><a href="https://lichess.org/${g.id}" target="_blank" rel="noopener">aç</a></td></tr>`;
+  }).join('');
+
+  $('veliBody').innerHTML = `
+    <div class="kpis">
+      ${kpi('Bu hafta oynanan oyun', tw.games, `${tw.W} galibiyet, ${tw.D} beraberlik, ${tw.L} yenilgi · ${fmtDelta(tw.games, lw.games)}`)}
+      ${kpi('Bu hafta oyunda geçen süre', `${(tw.minutes / 60).toFixed(1)} sa`, fmtDelta(0, (lw.minutes / 60).toFixed(1), ' sa'))}
+      ${kpi('Rapid puanı', rapidNow ?? '–', rapid30 && rapidNow ? `30 gün önce ${rapid30.v}, değişim ${rapidNow - rapid30.v >= 0 ? '+' : ''}${rapidNow - rapid30.v}` : '')}
+      ${kpi('Oyun başına büyük hata', b.recent == null ? '–' : b.recent.toFixed(1), b.before == null ? `${b.n} analizli oyuna göre` : `önceki 10 oyunda ${b.before.toFixed(1)}`)}
+      ${kpi('Gece oyunları (son 30 gün)', m.last30.late, `toplam ${m.last30.total} oyundan, 22:00–06:00 arası`)}
+      ${kpi('Hızlı oyun oranı (son 30 gün)', `%${Math.round(m.last30.fastShare * 100)}`, 'bullet ve blitz')}
+      ${kpi('Puhu ile çalışma (bu hafta)', `${days} / 7 gün`, `${stars} yıldız, ${mins} dakika · yalnız bu cihaz`)}
+      ${kpi('Lichess bulmacaları (bu hafta)', pzWeek ? pzWeek.length : '–', pzWeek ? `${pzWeek.length ? Math.round(pzWeek.filter(p => p.win).length / pzWeek.length * 100) : 0}% doğru` : S.pz === 'giris' ? 'Lichess ile giriş yapınca görünür' : 'Görmek için çıkış yapıp tekrar giriş yapın')}
+    </div>
+    ${notes.length ? `<div class="notes"><b>Koçun ebeveyne notu</b><ul>${notes.map(n => `<li>${n}</li>`).join('')}</ul></div>` : ''}
+    <div class="charts">
+      <section class="sheet"><h2>Haftalık oyun sayısı</h2><p class="sub">Son 12 hafta. Çubuğun üstüne gelince ayrıntı görünür.</p>
+        ${barSvg(m.weeks.map(w => ({ value: w.games, label: new Date(w.start).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' }), title: `${new Date(w.start).toLocaleDateString('tr-TR')} haftası: ${w.games} oyun, ${(w.minutes / 60).toFixed(1)} saat, ${w.W}G ${w.D}B ${w.L}M` })))}</section>
+      <section class="sheet"><h2>Rapid puanı</h2><p class="sub">Son 6 ay.</p>${lineSvg(rapid, 'Rapid puanı')}</section>
+      <section class="sheet"><h2>Bulmaca puanı</h2><p class="sub">Son 6 ay.</p>${lineSvg(series('Puzzles'), 'Bulmaca puanı')}</section>
+      <section class="sheet"><h2>Son 10 oyun</h2><table><tr><th>Tarih</th><th>Hız</th><th>Rakip</th><th>Sonuç</th><th class="n">Süre</th><th></th></tr>${recent}</table></section>
+    </div>`;
+}
+
 // ---------- Karnem ----------
 function renderKarne() {
   const p = S.user.perfs, prof = profile(), kinds = Object.entries(prof).sort((a, b) => b[1] - a[1]);
@@ -1019,7 +1186,7 @@ async function startLogin() {
   sessionStorage.setItem('pkce', JSON.stringify({ verifier, state }));
   const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
   location.href = 'https://lichess.org/oauth?' + new URLSearchParams({
-    response_type: 'code', client_id: CLIENT_ID, redirect_uri: redirectUri(), code_challenge_method: 'S256', code_challenge: challenge, state,
+    response_type: 'code', client_id: CLIENT_ID, redirect_uri: redirectUri(), code_challenge_method: 'S256', code_challenge: challenge, state, scope: 'puzzle:read',
   });
 }
 async function finishLogin() {
@@ -1056,7 +1223,7 @@ $('logout').onclick = async () => {
 drawMe(); renderHome();
 window.koc = { S, T, H, P, Chess }; // read-only handle for e2e_test.mjs
 const startAt = location.hash.slice(1);
-go(MODES[startAt] || startAt === 'karne' ? startAt : 'bugun');
+go(MODES[startAt] || startAt === 'karne' || startAt === 'veli' ? startAt : 'bugun');
 (async () => {
   if (LOCAL) { $('user').value = store.get('user', window.LICHESS_VERI?.user?.id || ''); return load(); }
   let id = null;

@@ -11,7 +11,7 @@ const block = html.split('// AKIL-BASLA')[1].split('// AKIL-BITIR')[0];
 const dir = mkdtempSync(join(tmpdir(), 'akil-'));
 const file = join(dir, 'akil.mjs');
 const chessUrl = pathToFileURL(join(process.cwd(), 'node_modules/chess.js/dist/esm/chess.js')).href;
-writeFileSync(file, `import { Chess } from '${chessUrl}';\n${block}\nexport { explain, hangingPieces, leitnerNext, pickTheme, makeStalemateTrap, thinkTimes, sayable, answer, dangerReport };`);
+writeFileSync(file, `import { Chess } from '${chessUrl}';\n${block}\nexport { explain, hangingPieces, leitnerNext, pickTheme, makeStalemateTrap, thinkTimes, sayable, answer, dangerReport, parentMetrics };`);
 const A = await import(pathToFileURL(file).href);
 
 const cases = [
@@ -79,5 +79,29 @@ const d2 = A.dangerReport('6k1/8/8/8/8/8/5PPP/r5K1 w - - 0 1');        // in che
 assert.equal(d2.inCheck, true);
 const d3 = A.dangerReport('3r2k1/8/8/8/8/8/5PPP/6K1 w - - 0 1');       // Rd1# threatened on my back rank
 assert.equal(d3.mateThreat, 'd1');
+
+// parent metrics: weekly buckets, last-30-day habits, blunder trend
+{
+  const now = new Date(2026, 10, 21, 12).getTime(), H = 36e5, D = 24 * H;    // Sat 21 Nov 2026, local time
+  const mk = (ago, o = {}) => ({ createdAt: now - ago, lastMoveAt: now - ago + 10 * 60e3, speed: 'rapid', winner: 'white',
+    players: { white: { user: { id: 'kid' }, analysis: o.bl == null ? undefined : { blunder: o.bl } }, black: { user: { id: 'x' } } }, ...o.g });
+  const games = [
+    mk(1 * H, { bl: 0 }),                                                          // this week, win, 10 min
+    mk(2 * H, { bl: 2, g: { winner: 'black' } }),                                  // this week, loss
+    mk(3 * H, { g: { speed: 'blitz', winner: undefined } }),                       // this week, draw, fast
+    mk(7 * D, { bl: 4 }),                                                          // last week
+    mk(now - new Date(2026, 10, 19, 23).getTime(), {}),                            // Thu 23:00 -> late night, this week
+    mk(200 * D, {}),                                                               // outside 12 weeks
+  ];
+  const m = A.parentMetrics(games, 'kid', now);
+  assert.equal(m.weeks.length, 12);
+  assert.deepEqual([m.thisWeek.games, m.thisWeek.W, m.thisWeek.L, m.thisWeek.D], [4, 2, 1, 1]);
+  assert.equal(m.thisWeek.minutes, 40);
+  assert.equal(m.lastWeek.games, 1);
+  assert.equal(m.last30.total, 5);
+  assert.equal(m.last30.late, 1);
+  assert.equal(m.last30.fastShare, 1 / 5);
+  assert.deepEqual(m.blunders, { recent: 2, before: null, n: 3 });            // 3 analyzed games: (0+2+4)/3, fewer than 2x10
+}
 
 console.log('OK: all brain tests pass');
