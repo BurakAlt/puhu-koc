@@ -54,8 +54,11 @@ assert.match(await say(), /Evet/, 'hunt hit: ' + await say());
 // 3. Pat tuzağı: stalemate move is rejected, mate is accepted
 await page.click('[data-go="bulmaca"]');
 await page.waitForSelector('[data-th="patTrap"]');
-await page.click('[data-th="patTrap"]');
-await page.waitForFunction(() => koc.P.fen && koc.P.theme === 'patTrap');
+for (let i = 0; i < 3 && !(await page.evaluate(() => koc.P.theme === 'patTrap' && !!koc.P.fen)); i++) {
+  await page.click('[data-th="patTrap"]');                              // chips re-render on mode entry; retry a stale click
+  await new Promise(r => setTimeout(r, 400));
+}
+await page.waitForFunction(() => koc.P.fen && koc.P.theme === 'patTrap', { timeout: 5000 });
 const { mate, pat } = await page.evaluate(() => {
   const c = new koc.Chess(koc.P.fen); let mate, pat;
   for (const m of c.moves({ verbose: true })) { c.move(m); if (c.isCheckmate()) mate = m.from + m.to; else if (c.isStalemate()) pat = m.from + m.to; c.undo(); }

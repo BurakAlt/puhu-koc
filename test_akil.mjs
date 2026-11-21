@@ -11,7 +11,7 @@ const block = html.split('// AKIL-BASLA')[1].split('// AKIL-BITIR')[0];
 const dir = mkdtempSync(join(tmpdir(), 'akil-'));
 const file = join(dir, 'akil.mjs');
 const chessUrl = pathToFileURL(join(process.cwd(), 'node_modules/chess.js/dist/esm/chess.js')).href;
-writeFileSync(file, `import { Chess } from '${chessUrl}';\n${block}\nexport { explain, hangingPieces, leitnerNext, pickTheme, makeStalemateTrap, thinkTimes, sayable, answer, dangerReport, parentMetrics };`);
+writeFileSync(file, `import { Chess } from '${chessUrl}';\n${block}\nexport { explain, hangingPieces, leitnerNext, pickTheme, makeStalemateTrap, thinkTimes, sayable, answer, dangerReport, parentMetrics, KINDS, difficultyFor, gameStats };`);
 const A = await import(pathToFileURL(file).href);
 
 const cases = [
@@ -36,17 +36,42 @@ assert.equal(A.explain('4k3/8/8/8/8/8/8/R3K3 w - - 0 1', 'e1d2', 'a1a2', 'Lost f
 assert.deepEqual(A.hangingPieces('4k3/8/8/8/8/2b5/8/R6K w - - 0 1', 'w').map(h => h.sq), ['a1']);
 assert.deepEqual(A.hangingPieces('4k3/8/8/8/8/2b5/1P6/R1K5 w - - 0 1', 'w'), []);
 
-// Leitner: correct moves up a box and pushes due date, wrong resets to box 1 due now
+// Leitner (P11): 1, 3, 7, 16, 35 days; wrong -> box 1, back in 10 minutes
 const now = 1_000_000_000_000, day = 864e5;
 let c = A.leitnerNext(undefined, true, now);
 assert.equal(c.box, 2); assert.equal(c.due, now + day);
-c = A.leitnerNext(c, true, now); assert.equal(c.box, 3); assert.equal(c.due, now + 3 * day);
-c = A.leitnerNext(c, false, now); assert.equal(c.box, 1); assert.equal(c.due, now);
+for (const d of [3, 7, 16, 35]) { c = A.leitnerNext(c, true, now); assert.equal(c.due, now + d * day); }
+c = A.leitnerNext(c, true, now); assert.equal(c.due, now + 35 * day, 'top box stays at 35 days');
+c = A.leitnerNext(c, false, now); assert.equal(c.box, 1); assert.equal(c.due, now + 10 * 60e3);
 
-// pickTheme: weakest (big share, low mastery) wins with deterministic rng
+// pickTheme (P2): returns the weakest mistake KIND, so mastery is credited to the right kind
 const profile = { asili: 10, catal: 1 }, mastery = { asili: { ok: 0, n: 0 }, catal: { ok: 0, n: 0 } };
-assert.equal(A.pickTheme(profile, mastery, () => 0), 'hangingPiece');
-assert.equal(A.pickTheme({ asili: 1, catal: 1 }, { asili: { ok: 50, n: 50 }, catal: { ok: 0, n: 50 } }, () => 0), 'fork');
+assert.equal(A.pickTheme(profile, mastery, () => 0), 'asili');
+assert.equal(A.pickTheme({ asili: 1, catal: 1 }, { asili: { ok: 50, n: 50 }, catal: { ok: 0, n: 50 } }, () => 0), 'catal');
+assert.equal(A.pickTheme({ korumasiz: 5, catal: 1 }, {}, () => 0), 'korumasiz');
+// defensive mistakes train defence, not "take the hanging piece"
+assert.equal(A.KINDS.asili.tema, 'defensiveMove'); assert.equal(A.KINDS.korumasiz.tema, 'defensiveMove');
+
+// puzzle difficulty (P1): with a token Lichess calibrates to the child's own rating
+assert.equal(A.difficultyFor([], true), 'normal');
+assert.equal(A.difficultyFor([true, true, true, true, true, true, true], true), 'harder');
+assert.equal(A.difficultyFor([true, false, false, true, false, true], true), 'easier');
+assert.equal(A.difficultyFor([true, true, false, false, false], true), 'easiest');
+assert.equal(A.difficultyFor([], false), 'easier');                     // no token: old anonymous thresholds
+assert.equal(A.difficultyFor([true, true, true, true, true], false), 'normal');
+
+// outcome metrics (P3): engine-free per-game stats
+const G = (moves, white = 'kid') => ({ id: 'g', createdAt: 1, moves, players: { white: { user: { id: white } }, black: { user: { id: white === 'kid' ? 'x' : 'kid' } } } });
+let s = A.gameStats(G('f3 e5 g4 Qh4#'), 'kid');                         // fool's mate: kid allowed mate in 1 with g4
+assert.equal(s.allowedMate, true); assert.deepEqual(s.card, { ply: 2, kind: 'matIzin', best: null });
+s = A.gameStats(G('e4 e5 Bc4 Nc6 Qh5 Nf6 a3'), 'kid');                   // Qxf7# was there, kid played a3
+assert.equal(s.missedMate, true); assert.equal(s.card.kind, 'matKacti'); assert.equal(s.card.best, 'h5f7');
+s = A.gameStats(G('e4 d5 exd5 Qxd5'), 'kid');                            // even trade is not a loss
+assert.equal(s.loss, 0); assert.equal(s.ownMoves, 2);
+s = A.gameStats(G('e4 e5 Nf3 d6 Ng5 Qxg5'), 'kid');                     // knight left en prise
+assert.equal(s.loss, 3); assert.equal(s.ownMoves, 3);
+s = A.gameStats(G('e4 e5 Nf3 d6 Ng5 Qxg5', 'x'), 'kid');                 // kid is black: he won the knight
+assert.equal(s.loss, 0); assert.equal(s.allowedMate, false);
 
 // stalemate trap: mate-in-1 exists AND a stalemating move exists
 for (let i = 0; i < 5; i++) {

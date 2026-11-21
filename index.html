@@ -322,11 +322,11 @@ const KINDS = {
     yaz: x => x.sq ? `Bu hamleden sonra rakip ${x.sq} karesine gelip MAT yapabiliyordu. Kendi şahının etrafına bakmadın.` : 'Bu hamleden sonra rakibin zorla mat yolu açıldı. Kendi şahının etrafına bakmadın.' },
   matKacti: { ad: 'Matı kaçırdım', tema: 'mateIn2', kural: 'Her hamlede önce şunu sor: Şah çekebilir miyim?',
     yaz: x => `Burada MAT vardı! ${trSan(x.bestSan)} ile oyunu bitirebilirdin.` },
-  asili: { ad: 'Taşımı korumasız kareye koydum', tema: 'hangingPiece', kural: 'Taşı koymadan önce sor: O kareyi rakipten kim görüyor?',
+  asili: { ad: 'Taşımı korumasız kareye koydum', tema: 'defensiveMove', kural: 'Taşı koymadan önce sor: O kareyi rakipten kim görüyor?',
     yaz: x => `${PN[x.t][1][0].toLocaleUpperCase('tr') + PN[x.t][1].slice(1)} ${x.sq} karesine koydun ama orada rakip onu bedavaya alabiliyordu.` },
   tehdit: { ad: 'Rakibin tehdidini görmedim', tema: 'defensiveMove', kural: 'Rakibin son hamlesine bak: Ne yapmak istiyor?',
     yaz: x => `Rakip ${x.sq} karesindeki ${PN[x.t][1]} tehdit ediyordu, sen başka bir hamle yaptın.` },
-  korumasiz: { ad: 'Koruyucu taşı kaldırdım', tema: 'hangingPiece', kural: 'Bir taşı oynatmadan önce sor: Bu taş kimi koruyordu?',
+  korumasiz: { ad: 'Koruyucu taşı kaldırdım', tema: 'defensiveMove', kural: 'Bir taşı oynatmadan önce sor: Bu taş kimi koruyordu?',
     yaz: x => `Bu hamle ${x.sq} karesindeki ${PN[x.t][1]} korumasız bıraktı. Rakip onu bedavaya alabilir.` },
   catal: { ad: 'Çatala izin verdim', tema: 'fork', kural: 'İki taşın aynı at ya da piyon hamlesine açık mı? Kontrol et.',
     yaz: x => `Bu hamleden sonra rakip ${x.sq} karesine gelip iki taşına birden saldırabiliyordu: ÇATAL!` },
@@ -396,26 +396,27 @@ function explain(fen0, played, best, comment = '') {
   return res('diger');
 }
 
-// Leitner spaced repetition: box 1..5, wrong answer resets.
-const DAY = 864e5, BOX_DAYS = [0, 0, 1, 3, 7, 14];
+// Leitner spaced repetition: box 1..6, wrong answer resets to box 1.
+const DAY = 864e5, BOX_DAYS = [0, 0, 1, 3, 7, 16, 35]; // box 2..6 -> 1, 3, 7, 16, 35 days
 function leitnerNext(card, ok, now = Date.now()) {
-  if (!ok) return { box: 1, due: now };
-  const box = Math.min((card?.box || 1) + 1, 5);
+  if (!ok) return { box: 1, due: now + 10 * 60e3 }; // wrong: back in 10 minutes, not instantly
+  const box = Math.min((card?.box || 1) + 1, 6);
   return { box, due: now + BOX_DAYS[box] * DAY };
 }
 
 // Adaptive theme choice: weight = share of this mistake kind × (1 − Laplace-smoothed mastery).
-// Highest weight first, then proportional sampling (rng() = 0 picks the weakest).
+// Highest weight first, then proportional sampling (rng() = 0 picks the weakest). Returns the mistake KIND,
+// so a solved puzzle credits exactly that kind (a theme like defensiveMove serves several kinds).
 function pickTheme(profile, mastery, rng = Math.random) {
   const total = Object.values(profile).reduce((a, b) => a + b, 0) || 1;
   const sc = Object.keys(profile).map(k => {
     const m = mastery[k] || { ok: 0, n: 0 };
     return [k, profile[k] / total * (1 - (m.ok + 1) / (m.n + 2))];
   }).sort((a, b) => b[1] - a[1]);
-  if (!sc.length) return 'hangingPiece';
+  if (!sc.length) return 'tehdit';
   let r = rng() * sc.reduce((a, s) => a + s[1], 0);
-  for (const [k, s] of sc) { r -= s; if (r < 0) return KINDS[k].tema; }
-  return KINDS[sc[0][0]].tema;
+  for (const [k, s] of sc) { r -= s; if (r < 0) return k; }
+  return sc[0][0];
 }
 
 // Random K+Q vs K, white to move, where one move mates and another stalemates.
@@ -523,6 +524,54 @@ function parentMetrics(games, me, now, nWeeks = 12) {
   };
 }
 
+// Lichess puzzle difficulty from recent first-try results. With a token Lichess calibrates to the child's own
+// puzzle rating, so 'normal' is right-sized; without one it calibrates to 1500, so the old lower thresholds stay.
+function difficultyFor(hist, hasToken) {
+  const h = hist.slice(-6), r = h.length ? h.filter(Boolean).length / h.length : 0;
+  if (!hasToken) return h.length < 3 ? 'easier' : r > 0.8 ? 'normal' : r < 0.4 ? 'easiest' : 'easier';
+  if (h.length >= 3 && !h.slice(-3).some(Boolean)) return 'easiest';
+  if (h.length < 3) return 'normal';
+  return r > 0.85 ? 'harder' : r <= 0.5 ? 'easier' : 'normal';
+}
+
+// Engine-free outcome stats for one game, from the child's side: own moves, material lost,
+// allowed a mate in 1 (only while not already lost by 5+ and not when every reply mates), missed own mate in 1.
+// At most one practice card per game. ponytail: trades are netted against the child's capture right before or
+// after; a slower exchange (3+ plies) can still count as a loss. Good for trends, not for single games.
+function gameStats(g, me) {
+  const my = g.players.white.user?.id === me ? 'w' : 'b', opp = my === 'w' ? 'b' : 'w';
+  const c = new Chess(), caps = [];
+  const mat = col => c.board().flat().reduce((s, p) => p && p.color === col && p.type !== 'k' ? s + VAL[p.type] : s, 0);
+  let ownMoves = 0, allowedMate = false, missedMate = false, card = null;
+  const sans = g.moves.split(' ');
+  for (let i = 0; i < sans.length; i++) {
+    const mine = c.turn() === my;
+    const mateMove = mine ? c.moves({ verbose: true }).find(m => m.san.endsWith('#')) : null;
+    let m;
+    try { m = c.move(sans[i]); } catch { break; }
+    caps[i] = m.captured ? VAL[m.captured] : 0;
+    if (!mine) continue;
+    ownMoves++;
+    if (mateMove && !m.san.endsWith('#')) {
+      missedMate = true;
+      card ??= { ply: i, kind: 'matKacti', best: mateMove.from + mateMove.to + (mateMove.promotion || '') };
+    }
+    if (!c.isGameOver() && mat(my) - mat(opp) > -5) {
+      const replies = c.moves({ verbose: true }), mates = replies.filter(r => r.san.endsWith('#')).length;
+      if (mates && mates < replies.length) { allowedMate = true; card ??= { ply: i, kind: 'matIzin', best: null }; }
+    }
+  }
+  let loss = 0;
+  const used = new Set(), myPly = i => (i % 2 === 0) === (my === 'w');
+  for (let i = 0; i < caps.length; i++) {
+    if (!caps[i] || myPly(i)) continue;                                  // opponent captured one of my pieces
+    let v = caps[i];
+    for (const j of [i - 1, i + 1]) if (v && caps[j] && !used.has(j)) { v = Math.max(0, v - caps[j]); used.add(j); }
+    loss += v;
+  }
+  return { id: g.id, createdAt: g.createdAt, ownMoves, loss, allowedMate, missedMate, card };
+}
+
 // Seconds spent on each ply from lichess clocks (centiseconds left after each ply).
 function thinkTimes(g) {
   const c = g.clocks || [], inc = g.clock?.increment || 0;
@@ -609,9 +658,14 @@ const STEPS = { hata: ['Hatalarım', 'Kendi oyunlarından 3 pozisyonu düzelt'],
 const starsAll = () => store.get('stars', {});
 const totalStars = () => Object.values(starsAll()).reduce((a, b) => a + b, 0);
 const dayProgress = () => store.get('gun', {})[today()] || {};
-function addStar() { const s = starsAll(); s[today()] = (s[today()] || 0) + 1; store.set('stars', s); drawMe(); }
+// Stars (P2): 2 for a first-try answer without help, 1 with help, 0 after "show answer".
+const starsFor = (clean, shown) => shown ? 0 : clean ? 2 : 1;
+function addStar(n = 1) { if (!n) return; const s = starsAll(); s[today()] = (s[today()] || 0) + n; store.set('stars', s); drawMe(); }
+// Per-mode open/finish counters (P4 add-on): shows whether a mode is started but abandoned.
+function countMode(mode, field) { const c = store.get('modSayac', {}); c[mode] = { acilis: 0, bitis: 0, ...c[mode] }; c[mode][field]++; store.set('modSayac', c); }
 function bump(step) {
   const g = store.get('gun', {}); g[today()] = { ...g[today()], [step]: (g[today()]?.[step] || 0) + 1 }; store.set('gun', g);
+  countMode(step, 'bitis');
   drawPill(); renderHome();
 }
 function streak() {
@@ -639,7 +693,7 @@ function renderHome() {
   $('cta').onclick = () => go(next || 'bulmaca');
   const t = totalStars(), cur = RANKS.filter(x => t >= x[2]).length - 1;
   $('ladder').innerHTML = RANKS.map(([g, n], i) => `<li class="${i < cur ? 'got' : i === cur ? 'now' : ''}"><span class="g" aria-hidden="true">${g}</span>${n}</li>`).join('');
-  $('ladderNote').textContent = RANKS[cur + 1] ? `${RANKS[cur + 1][1]} rütbesine ${RANKS[cur + 1][2] - t} yıldız kaldı. Her doğru cevap 1 yıldız.` : 'En yüksek rütbedesin: Şah!';
+  $('ladderNote').textContent = RANKS[cur + 1] ? `${RANKS[cur + 1][1]} rütbesine ${RANKS[cur + 1][2] - t} yıldız kaldı. Yardımsız doğru cevap 2 yıldız, ipucuyla doğru cevap 1 yıldız.` : 'En yüksek rütbedesin: Şah!';
 }
 
 // ---------- navigation ----------
@@ -651,6 +705,7 @@ function go(mode) {
   $('v-bugun').hidden = mode !== 'bugun'; $('v-karne').hidden = mode !== 'karne'; $('v-veli').hidden = mode !== 'veli'; $('v-train').hidden = !MODES[mode];
   if (mode === 'veli') openVeli();
   if (!MODES[mode]) { speechSynthesis?.cancel(); return; }
+  countMode(mode, 'acilis');
   $('modeTitle').textContent = MODES[mode]; drawPill();
   $('chips').hidden = mode !== 'bulmaca';
   $('info').innerHTML = '';
@@ -737,11 +792,57 @@ function show(user, games) {
   S.user = user;
   S.games = games.filter(g => g.variant === 'standard' && g.moves);
   S.mistakes = buildMistakes().concat(engineMistakes()); S.hunts = null; S.loaded = true;
+  if (S.stats) addMateCards();
   $('helloTitle').textContent = `Merhaba ${user.username}!`;
   homeSay(insight(), 'happy');
   renderHome(); renderKarne();
   if (first && MODES[S.mode]) go(S.mode);
   if (S.mode === 'veli' && sessionStorage.getItem('veli')) renderVeli();
+  startStats();
+}
+
+// ---------- P3: engine-free outcome stats, cached per game, computed in small slices so the page never freezes ----------
+const RELEASES = [['Paket 1: ölçüm düzeltmeleri', '2026-11-21']];   // trend is read against these dates
+const statsKey = () => 'stats:' + S.me;
+let statsRun = 0;
+async function startStats() {
+  const run = ++statsRun, cache = store.get(statsKey(), {});
+  const todo = S.games.filter(g => !cache[g.id]);
+  for (let i = 0; i < todo.length; i++) {
+    if (run !== statsRun) return;                                       // a newer load started
+    const g = todo[i];
+    try { cache[g.id] = gameStats(g, S.me); } catch { cache[g.id] = { id: g.id, createdAt: g.createdAt, ownMoves: 0, loss: 0 }; }
+    if (i % 4 === 3) { $('engine').textContent = `Puhu oyunlarını ölçüyor: ${i + 1} / ${todo.length}`; await new Promise(r => setTimeout(r, 0)); }
+  }
+  if (todo.length) { store.set(statsKey(), cache); $('engine').textContent = ''; }
+  S.stats = cache;
+  addMateCards();
+  renderKarne();
+}
+// Mate-in-1 moments found by the scan become practice cards (at most one per game).
+function addMateCards() {
+  const have = new Set(S.mistakes.map(m => m.key)), byId = new Map(S.games.map(g => [g.id, g]));
+  for (const s of Object.values(S.stats || {})) {
+    const g = byId.get(s.id);
+    if (!g || !s.card || have.has(`${g.id}:${s.card.ply}`)) continue;
+    const m = mistakeAt(g, s.card.ply, s.card.best);
+    if (m) S.mistakes.push(m);
+  }
+}
+function trendHtml() {
+  if (!S.stats) return '<section><h2>Gelişim</h2><p class="sub">Puhu oyunlarını ölçüyor…</p></section>';
+  const st = S.games.map(g => S.stats[g.id]).filter(s => s && s.ownMoves).sort((a, b) => b.createdAt - a.createdAt);
+  const agg = a => { const o = a.reduce((s, x) => s + x.ownMoves, 0); return { n: a.length, loss: o ? a.reduce((s, x) => s + x.loss, 0) * 100 / o : 0, am: a.filter(x => x.allowedMate).length, mm: a.filter(x => x.missedMate).length }; };
+  const last = agg(st.slice(0, 20)), prev = agg(st.slice(20, 40));
+  const row = (name, a, b) => `<tr><td>${name}</td><td class="n">${a}</td><td class="n">${b}</td></tr>`;
+  return `<section><h2>Gelişim</h2>
+    <p class="sub">Motor gerektirmeyen ölçüm, bütün oyunlarından. Son ${last.n} oyun ile önceki ${prev.n} oyun.</p>
+    <table><tr><th>Ölçüt</th><th class="n">Son 20</th><th class="n">Önceki 20</th></tr>
+      ${row('100 hamlede kaybedilen malzeme (piyon = 1)', n1(last.loss), n1(prev.loss))}
+      ${row('Rakibe 1 hamlede mat fırsatı verdiği oyun', last.am, prev.am)}
+      ${row('1 hamlelik matını kaçırdığı oyun', last.mm, prev.mm)}
+    </table>
+    <p class="sub">Yapılan değişiklikler: ${RELEASES.map(([n, d]) => `${n} (${new Date(d).toLocaleDateString('tr-TR')})`).join(', ')}. Bir değişikliğin etkisini görmek için ondan sonra en az 20 oyun gerekir.</p></section>`;
 }
 async function load() {
   S.me = $('user').value.trim().toLowerCase();
@@ -841,28 +942,37 @@ function nextMistake() {
   if (!S.mistakes.length) return coachSay('Henüz analizli hata bulamadım. Ben arka planda oyunlarına bakıyorum, birazdan tekrar dene.', 'think');
   const srs = store.get('srs', {}), now = Date.now();
   const due = S.mistakes.filter(m => srs[m.key] && srs[m.key].due <= now), fresh = S.mistakes.filter(m => !srs[m.key]);
-  const pool = due.length ? due : fresh.length ? fresh : S.mistakes;
-  Object.assign(T, { it: pool[Math.floor(Math.random() * pool.length)], wrong: 0, done: false, recorded: false });
+  let pool = due.length ? due : fresh.length ? fresh : S.mistakes;
+  if (pool.length > 1 && T.it) pool = pool.filter(m => m.key !== T.it.key);   // never the same card twice in a row
+  Object.assign(T, { it: pool[Math.floor(Math.random() * pool.length)], wrong: 0, done: false, recorded: false, hinted: false });
   orient = colorOf(T.it.g);
   setPos(T.it.fen, { last: T.it.last });
   $('info').innerHTML = `${due.includes(T.it) ? 'Tekrar zamanı gelen pozisyon. ' : ''}${gameInfo(T.it.g)} <a href="https://lichess.org/${T.it.g.id}#${T.it.ply}" target="_blank" rel="noopener">Oyunu lichess’te aç</a>`;
   coachSay(T.it.ex.kind === 'pat'
     ? `Bu pozisyonu hatırlıyor musun? Burada <b>${trSan(T.it.playedSan)}</b> oynadın ve oyun PAT oldu. Bu sefer pat yapmadan devam et!`
-    : `Bu pozisyonu hatırlıyor musun? Burada <b>${trSan(T.it.playedSan)}</b> oynadın ve bu büyük bir hataydı. Daha iyi hamleyi bul!`, 'think');
+    : !T.it.best
+      ? `Bu pozisyonu hatırlıyor musun? Burada <b>${trSan(T.it.playedSan)}</b> oynadın ve rakip tek hamlede MAT yapabildi. Bu sefer şahını koruyan bir hamle bul!`
+      : `Bu pozisyonu hatırlıyor musun? Burada <b>${trSan(T.it.playedSan)}</b> oynadın ve bu büyük bir hataydı. Daha iyi hamleyi bul!`, 'think');
 }
 function hataRecord(ok) {
   if (T.recorded) return; T.recorded = true;
-  const srs = store.get('srs', {}); srs[T.it.key] = leitnerNext(srs[T.it.key], ok); store.set('srs', srs);
-  masteryAdd(T.it.ex.kind, ok);
+  const srs = store.get('srs', {}), firstTime = !srs[T.it.key];
+  srs[T.it.key] = leitnerNext(srs[T.it.key], ok); store.set('srs', srs);
+  if (firstTime) masteryAdd(T.it.ex.kind, ok);        // a repeat of a known card is memory, not mastery (P2d)
 }
+// Cards without a single best move: any move that is not stalemate (pat) / does not allow mate in 1 (matIzin).
+const allowsMateIn1 = c => c.moves({ verbose: true }).some(r => r.san.endsWith('#'));
 function hataMove(uci) {
   if (T.done) return;
   const fen = B.fen(), m = playUci(B, uci);
   if (!m) return;
   sync(m);
-  const good = T.it.ex.kind === 'pat' ? !B.isStalemate() && !B.isDraw() : uci.slice(0, 4) === T.it.best.slice(0, 4) || B.isCheckmate();
+  const good = T.it.ex.kind === 'pat' ? !B.isStalemate() && !B.isDraw()
+    : !T.it.best ? !B.isStalemate() && !allowsMateIn1(B)
+    : uci.slice(0, 4) === T.it.best.slice(0, 4) || B.isCheckmate();
   if (good) {
-    T.done = true; lock(); hataRecord(T.wrong === 0); addStar(); bump('hata');
+    const clean = T.wrong === 0 && !T.hinted;
+    T.done = true; lock(); hataRecord(clean); addStar(starsFor(clean, false)); bump('hata');
     coachSay(`<b>${trSan(m.san)}</b>, aferin!${B.isCheckmate() ? ' Hem de MAT!' : ''} Peki oyunda neden hata yapmıştın? ${T.it.ex.text}`, 'happy', T.it.ex.rule);
     return;
   }
@@ -873,13 +983,19 @@ function hataMove(uci) {
 }
 function hataHint() {
   if (!T.it || T.done) return;
+  T.hinted = true;
   if (T.it.best) { circles([T.it.best.slice(0, 2)], 'yellow'); coachSay('Sarı işaretli taşa bak. Onunla ne yapabilirsin?', 'think'); }
-  else coachSay('Rakip şahın gidebileceği kareleri say. Hiç kare kalmıyorsa o hamle pat olur.', 'think');
+  else if (T.it.ex.kind === 'pat') coachSay('Rakip şahın gidebileceği kareleri say. Hiç kare kalmıyorsa o hamle pat olur.', 'think');
+  else coachSay('Rakibin şah çekebileceği hamlelere bak. Şahının etrafında hangi kare tehlikeli?', 'think');
 }
 function hataShow() {
   if (!T.it || T.done) return;
   T.done = true; lock(); hataRecord(false);
   if (T.it.best) arrow(T.it.best);
+  else if (T.it.ex.kind !== 'pat') {                                  // show one safe move for a "don't allow mate" card
+    const c = new Chess(T.it.fen), safe = c.moves({ verbose: true }).find(mv => { c.move(mv); const ok = !c.isStalemate() && !allowsMateIn1(c); c.undo(); return ok; });
+    if (safe) arrow(safe.from + safe.to);
+  }
   coachSay(`${T.it.best ? `En iyi hamle oktaki: <b>${trSan(T.it.ex.bestSan)}</b>. ` : ''}Oyunda neden hata yapmıştın? ${T.it.ex.text}`, 'wow', T.it.ex.rule);
 }
 
@@ -907,7 +1023,7 @@ function nextHunt() {
   S.hunts ??= buildHunts();
   if (!S.hunts.length) return coachSay('Oyunlarında uygun pozisyon bulamadım.', 'sad');
   const it = S.hunts.shift(); S.hunts.push(it);
-  Object.assign(H, { it, wrong: 0, done: false });
+  Object.assign(H, { it, wrong: 0, done: false, hinted: false });
   orient = colorOf(it.g);
   setPos(it.fen, { last: it.last, interactive: false });
   $('info').innerHTML = `${gameInfo(it.g)} Sıra sende. Tahtada bir kareye tıkla.`;
@@ -918,10 +1034,12 @@ function huntClick(sq) {
   const it = H.it, hit = it.targets.find(t => t.sq === sq);
   if (!hit) {
     H.wrong++;
+    if (H.wrong >= 2) { huntShow(); return; }                         // two misses: lock and show (P2c)
     cg.setShapes([{ orig: sq, brush: 'red' }]);
     return coachSay(it.type === 'tehlike' ? 'Orada değil. Rakip taşlarının hangi karelere baktığını tek tek kontrol et.' : 'Orada değil. Hangi rakip taşını hiçbir rakip taşı korumuyor?', 'sad');
   }
-  H.done = true; addStar(); bump('avci'); masteryAdd(it.type === 'tehlike' ? 'tehdit' : 'bedava', H.wrong === 0);
+  const clean = H.wrong === 0 && !H.hinted;
+  H.done = true; addStar(H.wrong ? 0 : starsFor(clean, false)); bump('avci'); masteryAdd(it.type === 'tehlike' ? 'tehdit' : 'bedava', clean);
   circles(it.targets.map(t => t.sq));
   const name = it.type === 'tehlike' ? { p: 'piyonun', n: 'atın', b: 'filin', r: 'kalen', q: 'vezirin' }[hit.type] : PN[hit.type][2];
   coachSay(it.type === 'tehlike'
@@ -934,49 +1052,53 @@ function huntHint() {
   const t = H.it.targets[0].sq, c = new Chess(H.it.fen);
   const attackerColor = H.it.type === 'tehlike' ? (colorOf(H.it.g) === 'white' ? 'b' : 'w') : colorOf(H.it.g)[0];
   const a = c.attackers(t, attackerColor)[0];
-  if (a) { circles([a], 'yellow'); coachSay('Sarı işaretli taş birine saldırıyor. Kime?', 'think'); }
+  if (a) { H.hinted = true; circles([a], 'yellow'); coachSay('Sarı işaretli taş birine saldırıyor. Kime?', 'think'); }
 }
-function huntShow() { if (H.done || !H.it) return; H.done = true; masteryAdd(H.it.type === 'tehlike' ? 'tehdit' : 'bedava', false); circles(H.it.targets.map(t => t.sq)); coachSay('Yeşil işaretli taş. Bir dahaki sefere sen bul!', 'wow'); }
+function huntShow() {
+  if (H.done || !H.it) return;
+  H.done = true; bump('avci'); masteryAdd(H.it.type === 'tehlike' ? 'tehdit' : 'bedava', false);
+  circles(H.it.targets.map(t => t.sq));
+  coachSay('Yeşil işaretli taş. Bir dahaki sefere sen bul!', 'wow');
+}
 
 // ---------- mode 3: Bulmaca (adaptive themes + local stalemate trap) ----------
-const THEMES = [['patTrap', 'Pat tuzağı'], ['mateIn1', '1 hamlede mat'], ['mateIn2', '2 hamlede mat'], ['hangingPiece', 'Korumasız taş'], ['fork', 'Çatal'], ['pin', 'Açmaz'], ['defensiveMove', 'Savunma'], ['middlegame', 'Oyun ortası'], ['endgame', 'Oyun sonu']];
+// [theme, label, the mistake kind a solve credits]. Puhu's pick credits its exact kind (several kinds share defensiveMove).
+const THEMES = [['patTrap', 'Pat tuzağı', 'pat'], ['mateIn1', '1 hamlede mat', 'matIzin'], ['mateIn2', '2 hamlede mat', 'matKacti'], ['hangingPiece', 'Korumasız taş', 'bedava'], ['fork', 'Çatal', 'catal'], ['pin', 'Açmaz', null], ['defensiveMove', 'Savunma', 'tehdit'], ['middlegame', 'Oyun ortası', 'diger'], ['endgame', 'Oyun sonu', null]];
 const P = { theme: null };
 function renderChips() {
-  const rec = pickTheme(profile(), store.get('mastery', {}));
-  P.theme ??= rec;
-  $('chips').innerHTML = THEMES.map(([k, n]) => `<button class="chip" data-th="${k}" aria-pressed="${k === P.theme}">${n}${k === rec ? ' <span class="rec" title="Puhu öneriyor">★</span>' : ''}</button>`).join('');
+  P.rec = pickTheme(profile(), store.get('mastery', {}));
+  const recTheme = KINDS[P.rec].tema;
+  P.theme ??= recTheme;
+  $('chips').innerHTML = THEMES.map(([k, n]) => `<button class="chip" data-th="${k}" aria-pressed="${k === P.theme}">${n}${k === recTheme ? ' <span class="rec" title="Puhu öneriyor">★</span>' : ''}</button>`).join('');
   $('chips').querySelectorAll('[data-th]').forEach(b => b.onclick = () => { P.theme = b.dataset.th; renderChips(); nextPuzzle(); });
 }
-function difficulty() {
-  const h = store.get('pzHist', []).slice(-6);
-  if (h.length < 3) return 'easier';
-  const r = h.filter(Boolean).length / h.length;
-  return r > 0.8 ? 'normal' : r < 0.4 ? 'easiest' : 'easier';
-}
-const themeKind = th => Object.keys(KINDS).find(k => KINDS[k].tema === th);
+const puzzleKind = () => P.theme === KINDS[P.rec]?.tema ? P.rec : THEMES.find(t => t[0] === P.theme)?.[2];
 function puzzleSolved() {
-  lock(); addStar(); bump('bulmaca');
-  const h = store.get('pzHist', []); h.push(P.wrong === 0); store.set('pzHist', h.slice(-20));
-  const k = themeKind(P.theme); if (k) masteryAdd(k, P.wrong === 0);
-  coachSay(P.wrong === 0 ? 'Çözdün, hem de ilk denemede!' : 'Çözdün! Bir sonrakini ilk denemede yapalım.', 'happy');
+  const clean = P.wrong === 0 && !P.hinted;
+  lock(); addStar(starsFor(clean, P.shown)); bump('bulmaca');
+  const h = store.get('pzHist', []); h.push(clean); store.set('pzHist', h.slice(-20));
+  if (P.kind) masteryAdd(P.kind, clean);
+  coachSay(clean ? 'Çözdün, hem de ilk denemede ve ipucusuz!' : 'Çözdün! Bir sonrakini ipucusuz deneyelim.', 'happy');
 }
 async function nextPuzzle() {
   onSquare = null; nextFn = nextPuzzle;
   const req = (P.req = (P.req || 0) + 1); // only the latest request may touch the board
-  Object.assign(P, { wrong: 0, step: 0, sol: null });
+  Object.assign(P, { wrong: 0, step: 0, sol: null, hinted: false, shown: false, kind: puzzleKind() });
   if (P.theme === 'patTrap') {
     P.fen = makeStalemateTrap(); orient = 'white'; setPos(P.fen);
-    onMove = patMove; hintFn = () => coachSay('Şah çeken hamlelere bak. Ama rakip şahın kaçacak karesi kalmazsa ve şah çekmiyorsan pat olur.', 'think');
-    showFn = () => { const c = new Chess(P.fen); const m = c.moves({ verbose: true }).find(m => { c.move(m); const r = c.isCheckmate(); c.undo(); return r; }); arrow(m.from + m.to); lock(); };
+    onMove = patMove; hintFn = () => { P.hinted = true; coachSay('Şah çeken hamlelere bak. Ama rakip şahın kaçacak karesi kalmazsa ve şah çekmiyorsan pat olur.', 'think'); };
+    showFn = () => { P.shown = true; const c = new Chess(P.fen); const m = c.moves({ verbose: true }).find(m => { c.move(m); const r = c.isCheckmate(); c.undo(); return r; }); arrow(m.from + m.to); lock(); };
     $('info').textContent = 'Puhu bu pozisyonu senin için üretti.';
     return coachSay('Beyaz oynar. Tek hamlede MAT yap! Dikkat, burada bir de PAT tuzağı var.', 'think');
   }
   onMove = puzzleMove;
-  hintFn = () => P.sol && circles([P.sol[P.step].slice(0, 2)], 'yellow');
-  showFn = () => { if (P.sol) { P.wrong++; arrow(P.sol[P.step]); } };
+  hintFn = () => { if (P.sol) { P.hinted = true; circles([P.sol[P.step].slice(0, 2)], 'yellow'); } };
+  showFn = () => { if (P.sol) { P.shown = true; P.wrong++; arrow(P.sol[P.step]); } };
   coachSay('Bulmaca geliyor…', 'think');
   try {
-    const d = await fetch(`https://lichess.org/api/puzzle/next?angle=${P.theme}&difficulty=${difficulty()}`).then(r => { if (!r.ok) throw 0; return r.json(); });
+    // P1: send the token so Lichess calibrates to the child's own puzzle rating and skips solved puzzles
+    const level = difficultyFor(store.get('pzHist', []), !!store.get('token', null));
+    const d = await fetch(`https://lichess.org/api/puzzle/next?angle=${P.theme}&difficulty=${level}`, { headers: auth() }).then(r => { if (!r.ok) throw 0; return r.json(); });
     if (req !== P.req || S.mode !== 'bulmaca') return;
     P.sol = d.puzzle.solution; P.fen = d.puzzle.fen;
     orient = new Chess(P.fen).turn() === 'w' ? 'white' : 'black';
@@ -1082,6 +1204,7 @@ function lineSvg(pts, name) {
     `<circle cx="${X(last.t)}" cy="${Y(last.v)}" r="4" fill="var(--plum)"/><text x="${X(last.t) + 8}" y="${Y(last.v) + 4}" class="v">${last.v}</text>` +
     `<text x="${L}" y="${H - 4}" class="l">${new Date(t0).toLocaleDateString('tr-TR')}</text><text x="${W - R}" y="${H - 4}" text-anchor="end" class="l">${new Date(t1).toLocaleDateString('tr-TR')}</text></svg>`;
 }
+const n1 = v => Number(v).toLocaleString('tr-TR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }); // 26,3 not 26.3
 const fmtDelta = (cur, prev, unit = '') => prev == null ? '' : `geçen hafta ${prev}${unit}`;
 
 async function renderVeli() {
@@ -1112,7 +1235,7 @@ async function renderVeli() {
   if (m.last30.total && m.last30.fastShare > 0.5) notes.push(`Son 30 günde oyunlarının %${Math.round(m.last30.fastShare * 100)}'i hızlı (bullet/blitz). Düşünmeye vakit kalan 15+10 rapid oyunlar gelişime daha çok katkı verir.`);
   if (m.last30.late >= 3) notes.push(`Son 30 günde ${m.last30.late} oyun gece 22:00 ile sabah 06:00 arasında oynanmış.`);
   if (tw.games >= 25) notes.push(`Bu hafta ${tw.games} oyun oynadı. Çok oyun az inceleme demek olabilir; Puhu’daki “Hatalarım” bölümüne zaman ayırması iyi olur.`);
-  if (b.recent != null && b.before != null) notes.push(b.recent < b.before ? `Güzel haber: son 10 analizli oyunda büyük hata ortalaması ${b.recent.toFixed(1)}, önceki 10 oyunda ${b.before.toFixed(1)}. Azalıyor.` : `Son 10 analizli oyunda büyük hata ortalaması ${b.recent.toFixed(1)}, önceki 10 oyunda ${b.before.toFixed(1)}. Henüz düşüş yok.`);
+  if (b.recent != null && b.before != null) notes.push(b.recent < b.before ? `Güzel haber: son 10 analizli oyunda büyük hata ortalaması ${n1(b.recent)}, önceki 10 oyunda ${n1(b.before)}. Azalıyor.` : `Son 10 analizli oyunda büyük hata ortalaması ${n1(b.recent)}, önceki 10 oyunda ${n1(b.before)}. Henüz düşüş yok.`);
   if (b.n < 10) notes.push('Hata eğilimini ölçmek için oyunların analiz edilmesi gerekiyor. Lichess’te oyun bitince “Bilgisayar analizi iste” demesini teşvik edin.');
 
   const recent = S.games.slice(0, 10).map(g => {
@@ -1123,9 +1246,9 @@ async function renderVeli() {
   $('veliBody').innerHTML = `
     <div class="kpis">
       ${kpi('Bu hafta oynanan oyun', tw.games, `${tw.W} galibiyet, ${tw.D} beraberlik, ${tw.L} yenilgi · ${fmtDelta(tw.games, lw.games)}`)}
-      ${kpi('Bu hafta oyunda geçen süre', `${(tw.minutes / 60).toFixed(1)} sa`, fmtDelta(0, (lw.minutes / 60).toFixed(1), ' sa'))}
+      ${kpi('Bu hafta oyunda geçen süre', `${n1((tw.minutes / 60))} sa`, fmtDelta(0, n1((lw.minutes / 60)), ' sa'))}
       ${kpi('Rapid puanı', rapidNow ?? '–', rapid30 && rapidNow ? `30 gün önce ${rapid30.v}, değişim ${rapidNow - rapid30.v >= 0 ? '+' : ''}${rapidNow - rapid30.v}` : '')}
-      ${kpi('Oyun başına büyük hata', b.recent == null ? '–' : b.recent.toFixed(1), b.before == null ? `${b.n} analizli oyuna göre` : `önceki 10 oyunda ${b.before.toFixed(1)}`)}
+      ${kpi('Oyun başına büyük hata', b.recent == null ? '–' : n1(b.recent), b.before == null ? `${b.n} analizli oyuna göre` : `önceki 10 oyunda ${n1(b.before)}`)}
       ${kpi('Gece oyunları (son 30 gün)', m.last30.late, `toplam ${m.last30.total} oyundan, 22:00–06:00 arası`)}
       ${kpi('Hızlı oyun oranı (son 30 gün)', `%${Math.round(m.last30.fastShare * 100)}`, 'bullet ve blitz')}
       ${kpi('Puhu ile çalışma (bu hafta)', `${days} / 7 gün`, `${stars} yıldız, ${mins} dakika · yalnız bu cihaz`)}
@@ -1134,9 +1257,13 @@ async function renderVeli() {
     ${notes.length ? `<div class="notes"><b>Koçun ebeveyne notu</b><ul>${notes.map(n => `<li>${n}</li>`).join('')}</ul></div>` : ''}
     <div class="charts">
       <section class="sheet"><h2>Haftalık oyun sayısı</h2><p class="sub">Son 12 hafta. Çubuğun üstüne gelince ayrıntı görünür.</p>
-        ${barSvg(m.weeks.map(w => ({ value: w.games, label: new Date(w.start).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' }), title: `${new Date(w.start).toLocaleDateString('tr-TR')} haftası: ${w.games} oyun, ${(w.minutes / 60).toFixed(1)} saat, ${w.W}G ${w.D}B ${w.L}M` })))}</section>
+        ${barSvg(m.weeks.map(w => ({ value: w.games, label: new Date(w.start).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' }), title: `${new Date(w.start).toLocaleDateString('tr-TR')} haftası: ${w.games} oyun, ${n1((w.minutes / 60))} saat, ${w.W}G ${w.D}B ${w.L}M` })))}</section>
       <section class="sheet"><h2>Rapid puanı</h2><p class="sub">Son 6 ay.</p>${lineSvg(rapid, 'Rapid puanı')}</section>
       <section class="sheet"><h2>Bulmaca puanı</h2><p class="sub">Son 6 ay.</p>${lineSvg(series('Puzzles'), 'Bulmaca puanı')}</section>
+      <section class="sheet"><h2>Puhu’da bölüm kullanımı</h2><p class="sub">Yalnız bu cihaz. Açılıp bitirilmeyen bölüm sıkıcı ya da zor olabilir.</p>
+        <table><tr><th>Bölüm</th><th class="n">Açılış</th><th class="n">Bitirilen görev</th></tr>
+          ${Object.entries(MODES).map(([k, n]) => { const c = store.get('modSayac', {})[k] || { acilis: 0, bitis: 0 }; return `<tr><td>${n}</td><td class="n">${c.acilis}</td><td class="n">${c.bitis}</td></tr>`; }).join('')}
+        </table></section>
       <section class="sheet"><h2>Son 10 oyun</h2><table><tr><th>Tarih</th><th>Hız</th><th>Rakip</th><th>Sonuç</th><th class="n">Süre</th><th></th></tr>${recent}</table></section>
     </div>`;
 }
@@ -1164,6 +1291,7 @@ function renderKarne() {
     </dl></section>
     <section><h2>Hata türlerim</h2><p class="sub">Son ${S.games.length} oyundaki ${S.mistakes.length} büyük hata, Puhu’nun bulduğu nedene göre.</p>
       <ul class="bars">${kinds.map(([k, n]) => `<li><span>${KINDS[k].ad}</span><span class="track"><span class="fill" style="display:block;width:${n / max * 100}%" title="${KINDS[k].ad}: ${n} hata"></span></span><span>${n}</span></li>`).join('')}</ul></section>
+    ${trendHtml()}
     ${t.n >= 3 ? `<section><h2>Düşünme süresi</h2><p class="sub">Hamle başına düşünme süresinin ortancası, saniye.</p>
       <ul class="bars">
         <li><span>Hata yaptığım hamleler</span><span class="track"><span class="fill" style="display:block;width:${t.bl / tmax * 100}%"></span></span><span>${Math.round(t.bl)}</span></li>
@@ -1220,6 +1348,9 @@ $('logout').onclick = async () => {
 };
 
 // ---------- start ----------
+// P2: mastery before the clean-signal fix was polluted (hints counted as first-try, wrong kind credited). Reset once;
+// stars and spaced-repetition cards stay.
+if (!store.get('masteryV2', false)) { try { localStorage.removeItem('mastery'); } catch {} store.set('masteryV2', true); }
 drawMe(); renderHome();
 window.koc = { S, T, H, P, Chess }; // read-only handle for e2e_test.mjs
 const startAt = location.hash.slice(1);
