@@ -11,7 +11,7 @@ const block = html.split('// AKIL-BASLA')[1].split('// AKIL-BITIR')[0];
 const dir = mkdtempSync(join(tmpdir(), 'akil-'));
 const file = join(dir, 'akil.mjs');
 const chessUrl = pathToFileURL(join(process.cwd(), 'node_modules/chess.js/dist/esm/chess.js')).href;
-writeFileSync(file, `import { Chess } from '${chessUrl}';\n${block}\nexport { explain, hangingPieces, leitnerNext, pickTheme, makeStalemateTrap, thinkTimes, sayable, answer, dangerReport, parentMetrics, KINDS, difficultyFor, gameStats, pendingReviews, reviewTruth, guessScore, reviewPgn };`);
+writeFileSync(file, `import { Chess } from '${chessUrl}';\n${block}\nexport { explain, hangingPieces, leitnerNext, pickTheme, makeStalemateTrap, thinkTimes, sayable, answer, dangerReport, parentMetrics, KINDS, difficultyFor, gameStats, pendingReviews, reviewTruth, guessScore, reviewPgn, monthBuckets };`);
 const A = await import(pathToFileURL(file).href);
 
 const cases = [
@@ -163,6 +163,20 @@ assert.equal(d3.mateThreat, 'd1');
   assert.match(pgn, /3\. Bc4 \{Benim tahminim: en büyük hatam bu\.\}/);
   assert.match(pgn, /4\. Ng5 \{Puhu: asıl hata bu hamleydi\.\}/);
   assert.match(pgn, /\{Dersim: Hamleden önce \(rakibe\) bak\. Maç: Zordu\.\} 0-1$/);   // braces inside a comment are escaped
+}
+
+// monthBuckets: last 3 calendar months, oldest first, kind counts per month
+{
+  const { monthBuckets } = A;
+  const at = d => ({ g: { createdAt: new Date(d).getTime() }, ex: { kind: 'tehdit' } });
+  const now = new Date('2026-11-21T12:00').getTime();
+  const list = [at('2026-11-02'), at('2026-10-15'), at('2026-10-01T09:00'), { ...at('2026-09-30'), ex: { kind: 'catal' } }, at('2026-08-31')];
+  const b = monthBuckets(list, now);
+  assert.deepEqual(b.months.map(m => m.items.length), [1, 2, 1]);
+  assert.equal(b.months[2].label, 'Kasım');
+  assert.deepEqual(b.kinds.tehdit, [0, 2, 1]);
+  assert.deepEqual(b.kinds.catal, [1, 0, 0]);
+  assert.equal(b.total, 4);                                   // August is outside the window
 }
 
 console.log('OK: all brain tests pass');

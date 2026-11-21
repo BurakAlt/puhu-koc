@@ -118,6 +118,20 @@ const steps = await page.$$eval('#steps li span', s => s.map(x => x.textContent)
 console.log('steps:', steps, 'stars:', await stars());
 assert.ok(steps[1].startsWith('1'), 'hunt step counted');
 
+// 4b. Last-3-months map in Karnem: filter by kind, click a tile -> that exact mistake opens on the board
+await page.click('[data-go="karne"]');
+await page.waitForSelector('#mapBox .tile', { timeout: 10000 });
+const beast = await page.$eval('#mapBox .beast', b => b.dataset.kind);
+await page.click('#mapBox .beast');
+assert.ok(await page.$$eval(`#mapBox .tile:not(.dim)`, t => t.length) >= 1, 'filter keeps its own tiles');
+assert.equal(await page.$eval('#mapBox .beast', b => b.getAttribute('aria-pressed')), 'true', 'filter ' + beast);
+const tileKey = await page.$eval('#mapBox .tile:not(.dim)', t => t.dataset.key);
+await page.click(`#mapBox .tile[data-key="${tileKey}"]`);
+await page.waitForFunction(k => koc.S.mode === 'hata' && koc.T.it?.key === k, { timeout: 5000 }, tileKey);
+await page.click('[data-go="karne"]');
+await page.waitForSelector('#mapBox .tile');
+await page.screenshot({ path: new URL('./harita_e2e.png', import.meta.url).pathname.replace(/^\//, ''), fullPage: true });
+
 // 5. Rank-up celebration: at 24 stars a clean stalemate-trap solve (+2) reaches the Knight rank
 await page.evaluate(() => { const d = new Date().toLocaleDateString('sv-SE'); localStorage.setItem('stars', JSON.stringify({ [d]: 24 })); });
 await page.click('[data-go="bulmaca"]');

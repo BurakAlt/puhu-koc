@@ -119,6 +119,28 @@
   .actions { display: flex; gap: 10px; flex-wrap: wrap; }
   .actions .primary { margin-left: auto; }
   .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .hunt-score { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin: 6px 0 14px; font-size: 15px; }
+  .hunt-score b { font: 800 26px/1 var(--display); }
+  .hunt-score .track { flex: 1 1 140px; min-width: 120px; }
+  .hunt-score .btn { margin-left: auto; padding: 9px 16px; font-size: 15px; background: var(--sun); box-shadow: 0 4px 0 var(--sun-d); }
+  .beasts { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 190px), 1fr)); gap: 10px; margin-bottom: 16px; }
+  .beast { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0 10px; text-align: left; border: 2px solid var(--line); background: var(--sheet); border-radius: 16px; padding: 10px 12px; cursor: pointer; font: inherit; color: var(--ink); transition: transform .08s; }
+  .beast:hover { transform: translateY(-2px); }
+  .beast[aria-pressed="true"] { border-color: var(--ink); box-shadow: 0 0 0 3px var(--sun); }
+  .beast .gl { grid-row: span 3; width: 42px; height: 42px; border-radius: 12px; background: var(--plum); color: #fff; display: grid; place-items: center; font: 800 24px/1 var(--display); align-self: center; }
+  .beast .nm { font-weight: 700; font-size: 14px; line-height: 1.3; }
+  .beast .ct { font-size: 13px; color: var(--ink-2); }
+  .beast .tr { font-size: 13px; font-weight: 700; }
+  .beast .tr.down { color: var(--ok-d); } .beast .tr.up { color: var(--bad); } .beast .tr.flat { color: var(--ink-2); }
+  .hmap { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .mcol h3 { margin: 0 0 8px; font: 700 17px/1.2 var(--display); text-transform: capitalize; }
+  .mcol h3 small { color: var(--ink-2); font-weight: 600; }
+  .tiles { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tile { width: 38px; height: 38px; border-radius: 10px; border: 0; background: var(--plum-l); color: var(--plum-d); font: 800 19px/1 var(--display); cursor: pointer; box-shadow: 0 3px 0 var(--plum); transition: transform .08s, opacity .15s; }
+  .tile:hover, .tile:focus-visible { transform: scale(1.15); }
+  .tile.won { background: var(--sun); color: var(--ink); box-shadow: 0 3px 0 var(--sun-d); }
+  .tile.dim { opacity: .2; }
+  @media (prefers-reduced-motion: reduce) { .tile, .beast { transition: none; } }
   .chips[hidden] { display: none; }
   .chip { border: 2px solid var(--line); background: var(--sheet); border-radius: 999px; padding: 7px 14px; font-weight: 600; font-size: 14px; cursor: pointer; }
   .chip[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: #fff; }
@@ -685,6 +707,22 @@ function thinkTimes(g) {
   const c = g.clocks || [], inc = g.clock?.increment || 0;
   return c.map((v, i) => i < 2 ? null : (c[i - 2] - v) / 100 + inc);
 }
+// Mistakes of the last n calendar months (oldest first) with per-kind monthly counts, for the "Hata avı haritası".
+function monthBuckets(list, now = Date.now(), n = 3) {
+  const d = new Date(now), months = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const s = new Date(d.getFullYear(), d.getMonth() - i, 1);
+    months.push({ start: s.getTime(), end: new Date(s.getFullYear(), s.getMonth() + 1, 1).getTime(), label: s.toLocaleDateString('tr-TR', { month: 'long' }), items: [] });
+  }
+  const kinds = {};
+  for (const m of list) {
+    const i = months.findIndex(x => m.g.createdAt >= x.start && m.g.createdAt < x.end);
+    if (i < 0) continue;
+    months[i].items.push(m);
+    (kinds[m.ex.kind] ??= Array(n).fill(0))[i]++;
+  }
+  return { months, kinds, total: months.reduce((s, x) => s + x.items.length, 0) };
+}
 // AKIL-BITIR
 
 const $ = id => document.getElementById(id);
@@ -1101,7 +1139,9 @@ function nextMistake() {
   const srs = store.get('srs', {}), now = Date.now();
   const due = S.mistakes.filter(m => srs[m.key] && srs[m.key].due <= now), fresh = S.mistakes.filter(m => !srs[m.key]);
   let pool = due.length ? due : fresh.length ? fresh : S.mistakes;
-  if (pool.length > 1 && T.it) pool = pool.filter(m => m.key !== T.it.key);   // never the same card twice in a row
+  const picked = T.pick && S.mistakes.find(m => m.key === T.pick); T.pick = null;
+  if (picked) pool = [picked];
+  if (!picked && pool.length > 1 && T.it) pool = pool.filter(m => m.key !== T.it.key);   // never the same card twice in a row
   Object.assign(T, { it: pool[Math.floor(Math.random() * pool.length)], wrong: 0, done: false, recorded: false, hinted: false });
   orient = colorOf(T.it.g);
   setPos(T.it.fen, { last: T.it.last });
@@ -1613,6 +1653,7 @@ function renderKarne() {
       <div><dt>Bulmaca</dt><dd>${p.puzzle?.rating ?? '–'}</dd></div>
       <div><dt>Toplam oyun</dt><dd>${S.user.count?.all ?? '–'}</dd></div>
     </dl></section>
+    <section id="mapBox"></section>
     <section><h2>Hata türlerim</h2><p class="sub">Son ${S.games.length} oyundaki ${S.mistakes.length} büyük hata, Puhu’nun bulduğu nedene göre.</p>
       <ul class="bars">${kinds.map(([k, n]) => `<li><span>${KINDS[k].ad}</span><span class="track"><span class="fill" style="display:block;width:${n / max * 100}%" title="${KINDS[k].ad}: ${n} hata"></span></span><span>${n}</span></li>`).join('')}</ul></section>
     ${trendHtml()}
@@ -1624,6 +1665,40 @@ function renderKarne() {
     ${mRows ? `<section><h2>Ustalık</h2><p class="sub">Puhu’yla çalıştıkça ilk denemede doğru yaptığın oran.</p><ul class="bars">${mRows}</ul></section>` : ''}
     <section><h2>Açılışlarım</h2><p class="sub">En az 4 kez oynadıkların, en zorlandığın en üstte.</p>
       <table><tr><th>Açılış</th><th class="n">G</th><th class="n">B</th><th class="n">M</th></tr>${opRows}</table></section>`;
+  renderMap();
+}
+const GLYPH = { pat: '½', matIzin: '♚', matKacti: '♛', asili: '♞', tehdit: '!', korumasiz: '♜', catal: '⑂', bedava: '♟', diger: '?' };
+const beaten = m => (store.get('srs', {})[m.key]?.box || 0) >= 2;
+function renderMap() {
+  const box = $('mapBox'); if (!box) return;
+  const b = monthBuckets(S.mistakes), f = S.mapKind, won = b.months.flatMap(x => x.items).filter(beaten).length;
+  if (!b.total) { box.innerHTML = '<h2>Son 3 ayın hataları</h2><p class="sub">Son 3 ayda analizli büyük hata yok. Harika!</p>'; return; }
+  const kinds = Object.entries(b.kinds).sort((x, y) => y[1].reduce((a, c) => a + c) - x[1].reduce((a, c) => a + c));
+  // per analysed game, last two months: raw counts follow how many games the engine has looked at, not skill
+  const played = b.months.map(mo => S.games.filter(g => g.createdAt >= mo.start && g.createdAt < mo.end && g.analysis).length);
+  const trend = c => {
+    if (played[1] < 5 || played[2] < 5) return ['flat', ''];
+    const a = c[1] / played[1], z = c[2] / played[2];
+    return z < a * 0.8 ? ['down', 'azalıyor'] : z > a * 1.25 ? ['up', 'dikkat'] : ['flat', 'aynı'];
+  };
+  box.innerHTML = `<h2>Son 3 ayın hataları</h2>
+    <p class="sub">Her kare oyunlarında yaptığın bir büyük hata. Kareye tıkla, o pozisyonu yeniden çöz. İki kez doğru çözdüğün hata yenilir ve yıldız olur. Analizli oyun sayısı: ${played.join(' → ')}.</p>
+    <div class="hunt-score"><b>${won}</b> / ${b.total} hata yenildi<span class="track"><span class="fill" style="display:block;width:${won / b.total * 100}%"></span></span>
+      <button class="btn" id="mapRand" type="button">Rastgele bir hatayla savaş</button></div>
+    <div class="beasts">${kinds.map(([k, c]) => { const [cls, word] = trend(c); return `<button type="button" class="beast" data-kind="${k}" aria-pressed="${f === k}">
+      <span class="gl">${GLYPH[k] || '?'}</span><span class="nm">${KINDS[k].ad}</span>
+      <span class="ct" title="Ay ay hata sayısı">${c.join(' → ')}</span><span class="tr ${cls}">${word}</span></button>`; }).join('')}</div>
+    <div class="hmap">${b.months.map(mo => `<div class="mcol"><h3>${mo.label} <small>${mo.items.length}</small></h3><div class="tiles">${
+      mo.items.sort((x, y) => x.g.createdAt - y.g.createdAt).map(m => `<button type="button" class="tile${beaten(m) ? ' won' : ''}${f && f !== m.ex.kind ? ' dim' : ''}" data-key="${m.key}"
+        title="${new Date(m.g.createdAt).toLocaleDateString('tr-TR')}, rakip ${escHtml(oppName(m.g))}: ${KINDS[m.ex.kind].ad}${beaten(m) ? ' (yenildi)' : ''}">${beaten(m) ? '★' : GLYPH[m.ex.kind] || '?'}</button>`).join('')}</div></div>`).join('')}</div>`;
+  box.querySelectorAll('.beast').forEach(e => e.onclick = () => { S.mapKind = S.mapKind === e.dataset.kind ? null : e.dataset.kind; renderMap(); });
+  const fight = key => { T.pick = key; go('hata'); };
+  box.querySelectorAll('.tile').forEach(e => e.onclick = () => fight(e.dataset.key));
+  $('mapRand').onclick = () => {
+    const pool = b.months.flatMap(x => x.items).filter(m => !beaten(m) && (!f || m.ex.kind === f));
+    const all = pool.length ? pool : b.months.flatMap(x => x.items);
+    fight(all[Math.floor(Math.random() * all.length)].key);
+  };
 }
 $('acct').onsubmit = e => { e.preventDefault(); load(); };
 
