@@ -1,0 +1,1003 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Puhu Koç</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=Lexend:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chessground@9.1.1/assets/chessground.base.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chessground@9.1.1/assets/chessground.brown.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chessground@9.1.1/assets/chessground.cburnett.css">
+<style>
+  :root {
+    color-scheme: light;
+    --ink: #1D2B4F; --ink-2: #4A5878; --page: #EAF1FA; --sheet: #FFFFFF; --line: #C9D6E8;
+    --sun: #FFC93C; --sun-d: #D9A21B; --plum: #6B4BA1; --plum-d: #4E3480; --plum-l: #B9A3E3;
+    --ok: #22A04B; --ok-d: #17803A; --bad: #E5484D; --sq-l: #DEE3E6; --sq-d: #8CA2AD;
+    --display: "Baloo 2", system-ui, sans-serif; --body: "Lexend", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--ink); font: 400 16px/1.55 var(--body); }
+  h1, h2, h3 { font-family: var(--display); line-height: 1.1; margin: 0; }
+  h1 { font-size: clamp(30px, 4vw, 42px); font-weight: 800; }
+  h2 { font-size: 24px; font-weight: 800; }
+  a { color: var(--plum-d); }
+  button { font: inherit; color: inherit; }
+  :focus-visible { outline: 3px solid var(--plum); outline-offset: 3px; }
+
+  /* ---------- shell ---------- */
+  .app { display: grid; grid-template-columns: 216px minmax(0, 1fr); min-height: 100vh; }
+  .rail { background: var(--ink); color: #fff; padding: 22px 14px; display: flex; flex-direction: column; gap: 4px; position: sticky; top: 0; height: 100vh; }
+  .brand { display: flex; align-items: center; gap: 8px; font: 800 26px/1 var(--display); padding: 0 8px 18px; }
+  .brand svg { width: 38px; }
+  .nav { display: flex; flex-direction: column; gap: 4px; }
+  .nav button { display: flex; gap: 12px; align-items: center; width: 100%; border: 0; border-radius: 12px; padding: 11px 12px; background: transparent; color: #C9D6E8; font-weight: 600; cursor: pointer; text-align: left; }
+  .nav button:hover { color: #fff; background: #26365E; }
+  .nav button[aria-current="page"] { color: #fff; background: #2C3D68; box-shadow: inset 4px 0 0 var(--sun); }
+  .nav .ic { font-size: 22px; width: 24px; text-align: center; line-height: 1; }
+  .me { margin-top: auto; padding: 14px 10px 0; border-top: 1px solid #33456F; font-size: 14px; color: #C9D6E8; display: grid; gap: 8px; }
+  .me b { color: #fff; font-size: 18px; }
+  .me .toggle { background: #26365E; border: 0; border-radius: 10px; padding: 8px 10px; color: #fff; cursor: pointer; text-align: left; }
+  .me .voice { display: grid; gap: 4px; }
+  .me select { font: inherit; font-size: 13px; background: #26365E; color: #fff; border: 0; border-radius: 10px; padding: 7px 8px; max-width: 100%; }
+  .me small { color: var(--sun); line-height: 1.4; }
+  .me small[hidden] { display: none; }
+  main { padding: 32px clamp(16px, 4vw, 48px) 48px; min-width: 0; }
+  .view[hidden] { display: none; }
+
+  /* ---------- buttons: chunky, press-down ---------- */
+  .btn { border: 0; border-radius: 14px; padding: 13px 20px; font-weight: 700; font-size: 16px; cursor: pointer; background: var(--sheet); color: var(--ink); box-shadow: 0 4px 0 var(--line); transition: transform .06s, box-shadow .06s; }
+  .btn:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--line); }
+  .btn.primary { background: var(--sun); box-shadow: 0 4px 0 var(--sun-d); }
+  .btn.primary:active { box-shadow: 0 1px 0 var(--sun-d); }
+  .btn.big { font-size: 20px; padding: 18px 30px; border-radius: 18px; }
+  .btn:disabled { opacity: .5; cursor: default; }
+
+  /* ---------- Puhu ---------- */
+  .puhu { display: block; width: 100%; height: auto; overflow: visible; }
+  .puhu .lid { transform-box: fill-box; transform-origin: 50% 0; transform: scaleY(0); animation: blink 5.5s infinite; }
+  .puhu .brow, .puhu .pupils, .puhu .cheek { transition: transform .25s, opacity .25s; transform-box: fill-box; transform-origin: center; }
+  .puhu .beak-low { opacity: 0; }
+  .puhu[data-mood="happy"] .cheek { opacity: .8; }
+  .puhu .cheek { opacity: 0; }
+  .puhu[data-mood="sad"] .brow.l { transform: rotate(-16deg) translateY(2px); }
+  .puhu[data-mood="sad"] .brow.r { transform: rotate(16deg) translateY(2px); }
+  .puhu[data-mood="sad"] .pupils { transform: translateY(3px); }
+  .puhu[data-mood="wow"] .brow { transform: translateY(-6px); }
+  .puhu[data-mood="wow"] .pupils { transform: scale(.7); }
+  .puhu[data-mood="wow"] .beak-low { opacity: 1; }
+  .puhu[data-mood="think"] .brow.l { transform: translateY(-6px); }
+  .puhu[data-mood="think"] .brow.r { transform: rotate(-8deg); }
+  .puhu[data-mood="think"] .pupils { transform: translate(-3px, -4px); }
+  .puhu.talking .beak-low { animation: talk .22s infinite alternate; }
+  .puhu.talking .body { animation: bob .44s infinite alternate; transform-box: fill-box; transform-origin: 50% 100%; }
+  @keyframes blink { 0%, 94%, 100% { transform: scaleY(0); } 96% { transform: scaleY(1); } }
+  @keyframes talk { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes bob { from { transform: scaleY(1); } to { transform: scaleY(1.025); } }
+
+  .bubble { position: relative; background: var(--sheet); border: 3px solid var(--ink); border-radius: 22px; padding: 16px 20px; font-size: 18px; line-height: 1.5; max-width: 62ch; }
+  .bubble::before { content: ""; position: absolute; left: -16px; bottom: 26px; border: 10px solid transparent; border-right: 14px solid var(--ink); border-left: 0; }
+  .bubble::after { content: ""; position: absolute; left: -10px; bottom: 28px; border: 8px solid transparent; border-right: 11px solid var(--sheet); border-left: 0; }
+  .rule { margin-top: 12px; background: #FFF4CC; border-left: 6px solid var(--sun); border-radius: 4px 12px 12px 4px; padding: 10px 14px; font-size: 16px; }
+  .rule[hidden] { display: none; }
+
+  /* ---------- home ---------- */
+  .hello { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 28px; align-items: end; max-width: 900px; }
+  .hello h1 { grid-column: 1 / -1; margin-bottom: 0; }
+  .today { margin-top: 40px; max-width: 900px; }
+  .steps { list-style: none; padding: 0; margin: 16px 0 26px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; counter-reset: s; }
+  .steps li { background: var(--sheet); border: 2px solid var(--line); border-radius: 18px; padding: 16px 18px 18px; position: relative; counter-increment: s; }
+  .steps li::before { content: counter(s); position: absolute; top: -14px; left: 16px; width: 28px; height: 28px; border-radius: 50%; background: var(--ink); color: #fff; font: 800 16px/28px var(--display); text-align: center; }
+  .steps li.done { border-color: var(--ok); }
+  .steps li.done::before { content: "✓"; background: var(--ok); }
+  .steps b { display: block; font-size: 18px; margin-top: 4px; }
+  .steps small { color: var(--ink-2); display: block; min-height: 2.6em; }
+  .meter { height: 10px; background: var(--page); border-radius: 6px; margin-top: 10px; overflow: hidden; }
+  .meter i { display: block; height: 100%; background: var(--ok); border-radius: 0 4px 4px 0; }
+  .ladder { margin-top: 46px; max-width: 900px; }
+  .ladder ol { list-style: none; padding: 0; margin: 14px 0 6px; display: flex; justify-content: space-between; position: relative; }
+  .ladder ol::before { content: ""; position: absolute; left: 24px; right: 24px; top: 27px; height: 6px; background: var(--line); border-radius: 3px; }
+  .ladder li { position: relative; display: grid; justify-items: center; gap: 2px; font-size: 13px; color: var(--ink-2); }
+  .ladder .g { width: 58px; height: 58px; border-radius: 50%; background: var(--page); border: 3px solid var(--line); display: grid; place-items: center; font-size: 32px; color: var(--line); }
+  .ladder li.got .g { background: var(--ink); border-color: var(--ink); color: #fff; }
+  .ladder li.now .g { background: var(--sun); border-color: var(--ink); color: var(--ink); box-shadow: 0 0 0 5px #FFE9A8; }
+  .ladder li.now { color: var(--ink); font-weight: 700; }
+
+  /* ---------- trainer ---------- */
+  .train { display: grid; grid-template-columns: minmax(0, min(600px, calc(100vh - 64px))) minmax(300px, 1fr); gap: 28px; align-items: start; }
+  .board { width: 100%; aspect-ratio: 1; }
+  cg-board { background: repeating-conic-gradient(var(--sq-d) 0 25%, var(--sq-l) 0 50%) 0 0 / 25% 25%; }
+  .boardframe { border-radius: 6px; overflow: hidden; box-shadow: 0 0 0 4px var(--ink); }
+  .coach { background: var(--sheet); border-radius: 22px; padding: 20px; border: 2px solid var(--line); display: grid; gap: 16px; }
+  .coach header { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .pill { background: var(--page); border-radius: 999px; padding: 4px 12px; font-size: 14px; font-weight: 600; }
+  .talk { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 16px; align-items: end; }
+  .talk .bubble { font-size: 17px; }
+  .info { font-size: 14px; color: var(--ink-2); margin: 0; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  .actions .primary { margin-left: auto; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chips[hidden] { display: none; }
+  .chip { border: 2px solid var(--line); background: var(--sheet); border-radius: 999px; padding: 7px 14px; font-weight: 600; font-size: 14px; cursor: pointer; }
+  .chip[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: #fff; }
+  .chip .rec { color: var(--sun-d); }
+  .chip[aria-pressed="true"] .rec { color: var(--sun); }
+  .engine { font-size: 13px; color: var(--ink-2); margin: 0; min-height: 1.2em; }
+
+  /* ---------- report ---------- */
+  .sheet { background: var(--sheet); border-radius: 22px; padding: clamp(18px, 3vw, 32px); max-width: 900px; margin-top: 22px; border: 2px solid var(--line); }
+  .sheet section + section { margin-top: 34px; }
+  .sheet h2 { margin-bottom: 4px; }
+  .sub { color: var(--ink-2); margin: 0 0 14px; font-size: 15px; }
+  .acct { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 16px; }
+  .acct input { font: inherit; padding: 11px 14px; border: 2px solid var(--line); border-radius: 12px; width: 200px; }
+  .stats { display: flex; flex-wrap: wrap; gap: 10px 36px; margin: 0; }
+  .stats div { display: grid; }
+  .stats dt { color: var(--ink-2); font-size: 14px; }
+  .stats dd { margin: 0; font: 800 30px/1.1 var(--display); }
+  .bars { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+  .bars li { display: grid; grid-template-columns: minmax(0, 190px) minmax(0, 1fr) 44px; gap: 12px; align-items: center; font-size: 15px; }
+  .bars .track { height: 14px; }
+  .bars .fill { height: 100%; background: var(--plum); border-radius: 0 4px 4px 0; min-width: 2px; }
+  .bars .fill.alt { background: var(--line); }
+  .bars span:last-child { font-weight: 700; text-align: right; }
+  table { border-collapse: collapse; width: 100%; font-size: 15px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); }
+  th { color: var(--ink-2); font-weight: 600; }
+  td.n, th.n { text-align: right; width: 48px; }
+
+  /* ---------- login ---------- */
+  .login { min-height: 100vh; display: grid; place-content: center; justify-items: center; text-align: center; gap: 16px; padding: 24px 16px; }
+  .login[hidden], body.locked .app { display: none; }
+  .login-owl { width: 180px; }
+  .login p { max-width: 38ch; margin: 0; font-size: 18px; }
+  .login .login-note { font-size: 14px; color: var(--ink-2); }
+
+  /* ---------- phone ---------- */
+  @media (max-width: 820px) {
+    .app { grid-template-columns: minmax(0, 1fr); }
+    .rail { position: fixed; inset: auto 0 0 0; height: auto; padding: 6px; z-index: 5; flex-direction: row; }
+    .brand, .me { display: none; }
+    .nav { flex-direction: row; width: 100%; }
+    .nav button { flex-direction: column; gap: 2px; padding: 6px 2px; font-size: 11px; text-align: center; }
+    .nav button[aria-current="page"] { box-shadow: inset 0 3px 0 var(--sun); }
+    main { padding: 20px 16px 96px; }
+    .hello { grid-template-columns: 96px minmax(0, 1fr); gap: 16px; }
+    .hello h1 { grid-column: 1 / -1; }
+    .steps { grid-template-columns: minmax(0, 1fr); gap: 22px; }
+    .train { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+    .talk { grid-template-columns: 64px minmax(0, 1fr); }
+    .bubble { font-size: 16px; }
+    .ladder .g { width: 44px; height: 44px; font-size: 24px; }
+    .ladder ol::before { top: 20px; }
+    .bars li { grid-template-columns: minmax(0, 120px) minmax(0, 1fr) 36px; font-size: 14px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .puhu .lid, .puhu.talking .beak-low, .puhu.talking .body { animation: none; }
+    .btn { transition: none; }
+  }
+</style>
+</head>
+<body>
+<section class="login" id="login" hidden>
+  <div class="login-owl" data-puhu></div>
+  <h1>Puhu Koç</h1>
+  <p>Lichess hesabınla giriş yap. Puhu oyunlarına bakıp sana özel antrenman hazırlasın.</p>
+  <button class="btn primary big" id="loginBtn">Lichess ile giriş yap</button>
+  <p class="login-note" id="loginMsg">Şifreni lichess.org sorar, Puhu şifreni hiç görmez.</p>
+</section>
+<div class="app">
+  <aside class="rail">
+    <div class="brand"><span data-puhu></span>Puhu Koç</div>
+    <nav class="nav" aria-label="Bölümler">
+      <button data-go="bugun" aria-current="page"><span class="ic">♔</span>Bugün</button>
+      <button data-go="hata"><span class="ic">↺</span>Hatalarım</button>
+      <button data-go="avci"><span class="ic">◎</span>Tehdit avı</button>
+      <button data-go="bulmaca"><span class="ic">♞</span>Bulmaca</button>
+      <button data-go="karne"><span class="ic">▤</span>Karnem</button>
+    </nav>
+    <div class="me">
+      <div><b id="starTotal">0</b> yıldız · <span id="rankName">Piyon</span></div>
+      <div id="streak"></div>
+      <button class="toggle" id="ttsBtn"></button>
+      <label class="voice">Puhu’nun sesi
+        <select id="voiceSel"></select>
+      </label>
+      <small id="voiceHint" hidden>Daha doğal ses için Puhu Koç’u Edge ile aç: “Puhu Koç.bat” dosyasına çift tıkla.</small>
+    </div>
+  </aside>
+
+  <main>
+    <section class="view" id="v-bugun">
+      <div class="hello">
+        <h1 id="helloTitle">Merhaba!</h1>
+        <div id="homeOwl" data-puhu></div>
+        <div class="bubble" id="homeSay">Oyunlarına bakıyorum…</div>
+      </div>
+      <div class="today">
+        <h2>Bugünkü antrenman</h2>
+        <ol class="steps" id="steps"></ol>
+        <button class="btn primary big" id="cta">Antrenmana başla</button>
+      </div>
+      <div class="ladder">
+        <h2>Rütbe yolu</h2>
+        <ol id="ladder"></ol>
+        <p class="sub" id="ladderNote"></p>
+      </div>
+    </section>
+
+    <section class="view train" id="v-train" hidden>
+      <div class="boardframe"><div class="board" id="board"></div></div>
+      <div class="coach">
+        <header><h2 id="modeTitle"></h2><span class="pill" id="modePill"></span></header>
+        <div class="talk">
+          <div id="coachOwl" data-puhu></div>
+          <div class="bubble" id="coachSay"></div>
+        </div>
+        <div class="rule" id="coachRule" hidden></div>
+        <p class="info" id="info"></p>
+        <div class="chips" id="chips" hidden></div>
+        <div class="actions">
+          <button class="btn" id="bHint">İpucu</button>
+          <button class="btn" id="bShow">Cevabı göster</button>
+          <button class="btn primary" id="bNext">Sıradaki</button>
+        </div>
+        <p class="engine" id="engine"></p>
+      </div>
+    </section>
+
+    <section class="view" id="v-karne" hidden>
+      <h1>Karnem</h1>
+      <form class="acct" id="acct">
+        <label for="user">Lichess hesabı</label>
+        <input id="user" autocomplete="off" spellcheck="false">
+        <button class="btn" type="submit" id="loadBtn">Oyunları yükle</button>
+        <button class="btn" type="button" id="logout" hidden>Çıkış yap</button>
+      </form>
+      <div class="sheet" id="karneBody"><p class="sub">Oyunlar yüklenince burada görünecek.</p></div>
+    </section>
+  </main>
+</div>
+
+<script src="veri/veri.js"></script>
+<script type="module">
+import { Chess } from 'https://cdn.jsdelivr.net/npm/chess.js@1.0.0/+esm';
+import { Chessground } from 'https://cdn.jsdelivr.net/npm/chessground@9.1.1/+esm';
+
+// Pure chess brain below: no DOM, tested by test_akil.mjs.
+// AKIL-BASLA
+const VAL = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 100 };
+// [name, "your X" accusative, "their X"]
+const PN = { p: ['piyon', 'piyonunu', 'piyonu'], n: ['at', 'atını', 'atı'], b: ['fil', 'filini', 'fili'], r: ['kale', 'kaleni', 'kalesi'], q: ['vezir', 'vezirini', 'veziri'], k: ['şah', 'şahını', 'şahı'] };
+const trSan = s => (s || '').replace(/[NBRQK]/g, c => ({ N: 'A', B: 'F', R: 'K', Q: 'V', K: 'Ş' })[c]);
+const KINDS = {
+  pat: { ad: 'Kazanırken pat yaptım', tema: 'patTrap', kural: 'Rakibin sadece şahı kaldıysa ona bir kaçış karesi bırak.',
+    yaz: () => 'PAT oldu! Rakip şah hiçbir kareye gidemiyordu ama şah da çekmemiştin. Kazandığın oyun berabere bitti.' },
+  matIzin: { ad: 'Mata izin verdim', tema: 'mateIn1', kural: 'Hamleden önce kendi şahına bak: Rakip bana şah çekebilir mi?',
+    yaz: x => x.sq ? `Bu hamleden sonra rakip ${x.sq} karesine gelip MAT yapabiliyordu. Kendi şahının etrafına bakmadın.` : 'Bu hamleden sonra rakibin zorla mat yolu açıldı. Kendi şahının etrafına bakmadın.' },
+  matKacti: { ad: 'Matı kaçırdım', tema: 'mateIn2', kural: 'Her hamlede önce şunu sor: Şah çekebilir miyim?',
+    yaz: x => `Burada MAT vardı! ${trSan(x.bestSan)} ile oyunu bitirebilirdin.` },
+  asili: { ad: 'Taşımı korumasız kareye koydum', tema: 'hangingPiece', kural: 'Taşı koymadan önce sor: O kareyi rakipten kim görüyor?',
+    yaz: x => `${PN[x.t][1][0].toLocaleUpperCase('tr') + PN[x.t][1].slice(1)} ${x.sq} karesine koydun ama orada rakip onu bedavaya alabiliyordu.` },
+  tehdit: { ad: 'Rakibin tehdidini görmedim', tema: 'defensiveMove', kural: 'Rakibin son hamlesine bak: Ne yapmak istiyor?',
+    yaz: x => `Rakip ${x.sq} karesindeki ${PN[x.t][1]} tehdit ediyordu, sen başka bir hamle yaptın.` },
+  korumasiz: { ad: 'Koruyucu taşı kaldırdım', tema: 'hangingPiece', kural: 'Bir taşı oynatmadan önce sor: Bu taş kimi koruyordu?',
+    yaz: x => `Bu hamle ${x.sq} karesindeki ${PN[x.t][1]} korumasız bıraktı. Rakip onu bedavaya alabilir.` },
+  catal: { ad: 'Çatala izin verdim', tema: 'fork', kural: 'İki taşın aynı at ya da piyon hamlesine açık mı? Kontrol et.',
+    yaz: x => `Bu hamleden sonra rakip ${x.sq} karesine gelip iki taşına birden saldırabiliyordu: ÇATAL!` },
+  bedava: { ad: 'Bedava taşı almadım', tema: 'hangingPiece', kural: 'Her hamlede sor: Rakibin korumasız bir taşı var mı?',
+    yaz: x => `Rakibin ${x.sq} karesindeki ${PN[x.t][2]} korumasızdı. ${trSan(x.bestSan)} ile bedavaya alabilirdin!` },
+  diger: { ad: 'Daha iyi plan vardı', tema: 'middlegame', kural: 'Hamle yapmadan önce en az iki aday hamle düşün.',
+    yaz: x => x.bestSan ? `Bu hamle oyunu zorlaştırdı. Daha iyisi ${trSan(x.bestSan)} idi.` : 'Bu hamle oyunu zorlaştırdı.' },
+};
+
+function playUci(chess, uci) {
+  try { return chess.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || 'q' }); } catch { return null; }
+}
+
+// Pieces of `color` (king excluded) the other side can win: attacked and undefended, or attacked by something cheaper.
+// ponytail: ignores pins and x-rays; good enough to explain kid-level blunders.
+function hangingPieces(fen, color) {
+  const c = new Chess(fen), opp = color === 'w' ? 'b' : 'w', out = [];
+  for (const row of c.board()) for (const p of row) {
+    if (!p || p.color !== color || p.type === 'k') continue;
+    const att = c.attackers(p.square, opp);
+    if (!att.length) continue;
+    const cheapest = Math.min(...att.map(s => VAL[c.get(s).type]));
+    if (!c.attackers(p.square, color).length || cheapest < VAL[p.type]) out.push({ sq: p.square, type: p.type });
+  }
+  return out;
+}
+
+// Why was `played` (uci) bad in `fen0`? Checks run from most to least serious.
+function explain(fen0, played, best, comment = '') {
+  const me = new Chess(fen0).turn(), opp = me === 'w' ? 'b' : 'w';
+  const sanOf = u => { const c = new Chess(fen0), m = u && playUci(c, u); return m ? m.san : ''; };
+  const base = { bestSan: sanOf(best), playedSan: sanOf(played) };
+  const res = (kind, extra = {}) => { const K = KINDS[kind], o = { kind, ...base, ...extra }; return { ...o, title: K.ad, rule: K.kural, theme: K.tema, text: K.yaz(o) }; };
+
+  const c1 = new Chess(fen0), mv = playUci(c1, played);
+  if (!mv) return res('diger');
+  if (c1.isStalemate()) return res('pat');
+  for (const m of c1.moves({ verbose: true })) {
+    c1.move(m); const mate = c1.isCheckmate(); c1.undo();
+    if (mate) return res('matIzin', { sq: m.to });
+  }
+  if (best) { const c2 = new Chess(fen0), b = playUci(c2, best); if (b && c2.isCheckmate()) return res('matKacti'); }
+
+  const after = hangingPieces(c1.fen(), me);
+  const moved = after.find(h => h.sq === mv.to);
+  if (moved && !(mv.captured && VAL[mv.captured] >= VAL[mv.piece])) return res('asili', { sq: mv.to, t: mv.piece });
+  const before = new Set(hangingPieces(fen0, me).map(h => h.sq));
+  const other = after.find(h => h.sq !== mv.to);
+  if (other) return res(before.has(other.sq) ? 'tehdit' : 'korumasiz', { sq: other.sq, t: other.type });
+
+  for (const m of c1.moves({ verbose: true })) {
+    c1.move(m);
+    let hits = 0;
+    for (const row of c1.board()) for (const p of row) {
+      if (!p || p.color !== me || !c1.attackers(p.square, opp).includes(m.to)) continue;
+      if (p.type === 'k' || VAL[p.type] > VAL[m.piece] || !c1.attackers(p.square, me).length) hits++;
+    }
+    c1.undo();
+    if (hits >= 2) return res('catal', { sq: m.to });
+  }
+  if (best) {
+    const c2 = new Chess(fen0), b = playUci(c2, best);
+    if (b?.captured && hangingPieces(fen0, opp).some(h => h.sq === b.to)) return res('bedava', { sq: b.to, t: b.captured });
+  }
+  if (/checkmate is now unavoidable/i.test(comment)) return res('matIzin');
+  if (/forced checkmate/i.test(comment)) return res('matKacti');
+  return res('diger');
+}
+
+// Leitner spaced repetition: box 1..5, wrong answer resets.
+const DAY = 864e5, BOX_DAYS = [0, 0, 1, 3, 7, 14];
+function leitnerNext(card, ok, now = Date.now()) {
+  if (!ok) return { box: 1, due: now };
+  const box = Math.min((card?.box || 1) + 1, 5);
+  return { box, due: now + BOX_DAYS[box] * DAY };
+}
+
+// Adaptive theme choice: weight = share of this mistake kind × (1 − Laplace-smoothed mastery).
+// Highest weight first, then proportional sampling (rng() = 0 picks the weakest).
+function pickTheme(profile, mastery, rng = Math.random) {
+  const total = Object.values(profile).reduce((a, b) => a + b, 0) || 1;
+  const sc = Object.keys(profile).map(k => {
+    const m = mastery[k] || { ok: 0, n: 0 };
+    return [k, profile[k] / total * (1 - (m.ok + 1) / (m.n + 2))];
+  }).sort((a, b) => b[1] - a[1]);
+  if (!sc.length) return 'hangingPiece';
+  let r = rng() * sc.reduce((a, s) => a + s[1], 0);
+  for (const [k, s] of sc) { r -= s; if (r < 0) return KINDS[k].tema; }
+  return KINDS[sc[0][0]].tema;
+}
+
+// Random K+Q vs K, white to move, where one move mates and another stalemates.
+function makeStalemateTrap(rng = Math.random) {
+  const name = i => 'abcdefgh'[i % 8] + (Math.floor(i / 8) + 1);
+  for (let t = 0; t < 30000; t++) {
+    const bk = Math.floor(rng() * 64), wk = Math.floor(rng() * 64), wq = Math.floor(rng() * 64);
+    if (bk === wk || bk === wq || wk === wq) continue;
+    const bf = bk % 8, br = Math.floor(bk / 8);
+    if (!(bf === 0 || bf === 7 || br === 0 || br === 7)) continue;
+    if (Math.max(Math.abs(bf - wk % 8), Math.abs(br - Math.floor(wk / 8))) < 2) continue;
+    const c = new Chess(); c.clear();
+    c.put({ type: 'k', color: 'b' }, name(bk)); c.put({ type: 'k', color: 'w' }, name(wk)); c.put({ type: 'q', color: 'w' }, name(wq));
+    if (c.isAttacked(name(bk), 'w')) continue;
+    let mate = false, pat = false;
+    for (const m of c.moves({ verbose: true })) { c.move(m); if (c.isCheckmate()) mate = true; else if (c.isStalemate()) pat = true; c.undo(); }
+    if (mate && pat) return c.fen();
+  }
+  return '7k/8/6K1/8/8/8/8/5Q2 w - - 0 1';
+}
+
+// Text for the speech engine: strip HTML, read Turkish SAN and squares as words ("Fxd7" -> "fil alır d yedi").
+const SAY_PIECE = { A: 'at', F: 'fil', K: 'kale', V: 'vezir', Ş: 'şah' };
+const SAY_NUM = ['', 'bir', 'iki', 'üç', 'dört', 'beş', 'altı', 'yedi', 'sekiz'];
+function sayable(html) {
+  return html.replace(/<[^>]+>/g, '').replace(
+    /(?<![\p{L}\p{N}])(O-O-O|O-O|([AFKVŞ])?([a-h])?([1-8])?(x)?([a-h])([1-8])(?:=([AFKVŞ]))?([+#])?)(?![\p{L}\p{N}])/gu,
+    (all, tok, pc, df, dr, cap, f, r, promo, sfx) => {
+      if (tok === 'O-O') return 'kısa rok';
+      if (tok === 'O-O-O') return 'uzun rok';
+      const w = [];
+      if (pc) w.push(SAY_PIECE[pc]);
+      if (df) w.push(df);
+      if (dr) w.push(SAY_NUM[dr]);
+      if (cap) w.push('alır');
+      w.push(`${f} ${SAY_NUM[r]}`);
+      if (promo) w.push(`${SAY_PIECE[promo]} olur`);
+      if (sfx) w.push(sfx === '#' ? 'mat' : 'şah');
+      return w.join(' ');
+    });
+}
+
+// Seconds spent on each ply from lichess clocks (centiseconds left after each ply).
+function thinkTimes(g) {
+  const c = g.clocks || [], inc = g.clock?.increment || 0;
+  return c.map((v, i) => i < 2 ? null : (c[i - 2] - v) / 100 + inc);
+}
+// AKIL-BITIR
+
+const $ = id => document.getElementById(id);
+const store = {
+  get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+const today = () => new Date().toLocaleDateString('sv-SE');
+const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const median = a => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
+const S = { games: [], me: '', user: null, mistakes: [], hunts: null, loaded: false, mode: 'bugun' };
+
+// ---------- Puhu (original owl character) ----------
+const PUHU = `<svg class="puhu" viewBox="0 0 120 132" data-mood="happy" aria-hidden="true">
+  <g class="body">
+    <path d="M30 40 L20 8 L50 30Z M90 40 L100 8 L70 30Z" fill="#4E3480"/>
+    <ellipse cx="60" cy="74" rx="45" ry="50" fill="#6B4BA1"/>
+    <path d="M16 70 q-7 28 15 42 q-5 -21 2 -40z M104 70 q7 28 -15 42 q5 -21 -2 -40z" fill="#4E3480"/>
+    <ellipse cx="60" cy="92" rx="28" ry="29" fill="#B9A3E3"/>
+    <path d="M47 86 q4 4 8 0 M65 86 q4 4 8 0 M56 99 q4 4 8 0" stroke="#8F76C4" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+    <circle cx="44" cy="55" r="17" fill="#fff"/><circle cx="76" cy="55" r="17" fill="#fff"/>
+    <g class="pupils"><circle cx="45" cy="56" r="7.5" fill="#1D2B4F"/><circle cx="75" cy="56" r="7.5" fill="#1D2B4F"/>
+      <circle cx="47.5" cy="53" r="2.4" fill="#fff"/><circle cx="77.5" cy="53" r="2.4" fill="#fff"/></g>
+    <ellipse class="lid" cx="44" cy="55" rx="18" ry="18" fill="#6B4BA1"/><ellipse class="lid" cx="76" cy="55" rx="18" ry="18" fill="#6B4BA1"/>
+    <path class="brow l" d="M31 32 Q42 25 53 31" stroke="#2E1F4D" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <path class="brow r" d="M67 31 Q78 25 89 32" stroke="#2E1F4D" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <circle class="cheek" cx="30" cy="72" r="5" fill="#F29BB6"/><circle class="cheek" cx="90" cy="72" r="5" fill="#F29BB6"/>
+    <path class="beak-low" d="M54.5 71 L65.5 71 L60 81Z" fill="#D9A21B"/>
+    <path d="M53 65 L67 65 L60 77Z" fill="#FFC93C" stroke="#D9A21B" stroke-width="1.5" stroke-linejoin="round"/>
+  </g>
+  <path d="M46 122 l-5 7 M50 123 v7 M54 122 l5 7 M66 122 l-5 7 M70 123 v7 M74 122 l5 7" stroke="#D9A21B" stroke-width="3.2" stroke-linecap="round"/>
+</svg>`;
+document.querySelectorAll('[data-puhu]').forEach(el => { el.innerHTML = PUHU; });
+
+let tts = store.get('tts', true);
+const drawTts = () => { $('ttsBtn').textContent = tts ? 'Puhu sesli konuşuyor' : 'Puhu sessiz'; $('ttsBtn').setAttribute('aria-pressed', tts); };
+$('ttsBtn').onclick = () => { tts = !tts; store.set('tts', tts); if (!tts) speechSynthesis?.cancel(); drawTts(); };
+drawTts();
+
+// Best Turkish voice: Edge "Natural" (neural) > Google > any other tr voice (old Windows Tolga).
+const voiceScore = v => /natural/i.test(v.name) ? 3 : /google/i.test(v.name) ? 2 : 1;
+let voice = null;
+function loadVoices() {
+  if (!('speechSynthesis' in window)) return;
+  const tr = speechSynthesis.getVoices().filter(v => v.lang.toLowerCase().startsWith('tr')).sort((a, b) => voiceScore(b) - voiceScore(a));
+  if (!tr.length) return;
+  voice = tr.find(v => v.name === store.get('voice', '')) || tr[0];
+  $('voiceSel').innerHTML = tr.map(v => `<option${v === voice ? ' selected' : ''}>${v.name.replace(/^Microsoft |\s*-\s*Turkish.*$| Online \(Natural\)/g, '')}${voiceScore(v) === 3 ? ' (doğal)' : ''}</option>`).join('');
+  $('voiceSel').onchange = () => { voice = tr[$('voiceSel').selectedIndex]; store.set('voice', voice.name); speak('Merhaba, ben Puhu!', $('coachOwl')); };
+  $('voiceHint').hidden = voiceScore(tr[0]) === 3;
+}
+if ('speechSynthesis' in window) { speechSynthesis.onvoiceschanged = loadVoices; loadVoices(); }
+
+function speak(html, owl) {
+  const svg = owl.querySelector('.puhu');
+  svg.classList.add('talking');
+  const stop = () => svg.classList.remove('talking');
+  if (!tts || !('speechSynthesis' in window)) { setTimeout(stop, 1400); return; }
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(sayable(html).replace(/[^\p{L}\p{N}\s.,!?:]/gu, ' '));
+  u.lang = 'tr-TR'; u.onend = u.onerror = stop;
+  if (voice) u.voice = voice;
+  u.pitch = voice && voiceScore(voice) === 3 ? 1 : 1.15;
+  speechSynthesis.speak(u);
+}
+function homeSay(html, mood = 'happy') { $('homeSay').innerHTML = html; $('homeOwl').querySelector('.puhu').dataset.mood = mood; }
+function coachSay(html, mood = 'happy', rule = null) {
+  $('coachSay').innerHTML = html;
+  $('coachOwl').querySelector('.puhu').dataset.mood = mood;
+  $('coachRule').hidden = !rule;
+  if (rule) $('coachRule').innerHTML = `<b>Altın kural:</b> ${rule}`;
+  speak(html + (rule ? '. Altın kural: ' + rule : ''), $('coachOwl'));
+}
+
+// ---------- stars, ranks, daily plan ----------
+const RANKS = [['♟', 'Piyon', 0], ['♞', 'At', 25], ['♝', 'Fil', 60], ['♜', 'Kale', 120], ['♛', 'Vezir', 200], ['♚', 'Şah', 320]];
+const GOALS = { hata: 3, avci: 5, bulmaca: 5 };
+const STEPS = { hata: ['Hatalarım', 'Kendi oyunlarından 3 pozisyonu düzelt'], avci: ['Tehdit avı', 'Tehlikedeki ya da bedava 5 taşı bul'], bulmaca: ['Bulmaca', 'Puhu’nun senin için seçtiği konudan 5 bulmaca'] };
+const starsAll = () => store.get('stars', {});
+const totalStars = () => Object.values(starsAll()).reduce((a, b) => a + b, 0);
+const dayProgress = () => store.get('gun', {})[today()] || {};
+function addStar() { const s = starsAll(); s[today()] = (s[today()] || 0) + 1; store.set('stars', s); drawMe(); }
+function bump(step) {
+  const g = store.get('gun', {}); g[today()] = { ...g[today()], [step]: (g[today()]?.[step] || 0) + 1 }; store.set('gun', g);
+  drawPill(); renderHome();
+}
+function streak() {
+  const s = starsAll(); let n = 0; const d = new Date();
+  if (!s[d.toLocaleDateString('sv-SE')]) d.setDate(d.getDate() - 1);
+  while (s[d.toLocaleDateString('sv-SE')]) { n++; d.setDate(d.getDate() - 1); }
+  return n;
+}
+function drawMe() {
+  const t = totalStars(), r = RANKS.filter(x => t >= x[2]).at(-1);
+  $('starTotal').textContent = t; $('rankName').textContent = r[1];
+  const st = streak(); $('streak').textContent = st ? `${st} gündür her gün çalışıyorsun` : 'Bugün ilk yıldızını topla';
+}
+function masteryAdd(kind, ok) { const m = store.get('mastery', {}); m[kind] = { ok: (m[kind]?.ok || 0) + (ok ? 1 : 0), n: (m[kind]?.n || 0) + 1 }; store.set('mastery', m); }
+
+function renderHome() {
+  const p = dayProgress();
+  $('steps').innerHTML = Object.entries(STEPS).map(([k, [t, d]]) => {
+    const n = Math.min(p[k] || 0, GOALS[k]);
+    return `<li class="${n >= GOALS[k] ? 'done' : ''}"><b>${t}</b><small>${d}</small><span>${n} / ${GOALS[k]}</span><div class="meter"><i style="width:${n / GOALS[k] * 100}%"></i></div></li>`;
+  }).join('');
+  const next = Object.keys(STEPS).find(k => (p[k] || 0) < GOALS[k]);
+  const started = Object.values(p).some(Boolean);
+  $('cta').textContent = next ? (started ? `Devam et: ${STEPS[next][0]}` : 'Antrenmana başla') : 'Bugünlük bitti! Serbest bulmaca çöz';
+  $('cta').onclick = () => go(next || 'bulmaca');
+  const t = totalStars(), cur = RANKS.filter(x => t >= x[2]).length - 1;
+  $('ladder').innerHTML = RANKS.map(([g, n], i) => `<li class="${i < cur ? 'got' : i === cur ? 'now' : ''}"><span class="g" aria-hidden="true">${g}</span>${n}</li>`).join('');
+  $('ladderNote').textContent = RANKS[cur + 1] ? `${RANKS[cur + 1][1]} rütbesine ${RANKS[cur + 1][2] - t} yıldız kaldı. Her doğru cevap 1 yıldız.` : 'En yüksek rütbedesin: Şah!';
+}
+
+// ---------- navigation ----------
+const MODES = { hata: 'Hatalarım', avci: 'Tehdit avı', bulmaca: 'Bulmaca' };
+function go(mode) {
+  S.mode = mode;
+  history.replaceState(null, '', '#' + mode);
+  document.querySelectorAll('[data-go]').forEach(b => b.dataset.go === mode ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current'));
+  $('v-bugun').hidden = mode !== 'bugun'; $('v-karne').hidden = mode !== 'karne'; $('v-train').hidden = !MODES[mode];
+  if (!MODES[mode]) { speechSynthesis?.cancel(); return; }
+  $('modeTitle').textContent = MODES[mode]; drawPill();
+  $('chips').hidden = mode !== 'bulmaca';
+  $('info').innerHTML = '';
+  ({ hata: nextMistake, avci: nextHunt, bulmaca: () => { renderChips(); nextPuzzle(); } })[mode]();
+}
+document.querySelectorAll('[data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
+function drawPill() { if (MODES[S.mode]) $('modePill').textContent = `Bugün ${Math.min(dayProgress()[S.mode] || 0, GOALS[S.mode])} / ${GOALS[S.mode]}`; }
+
+// ---------- board ----------
+const B = new Chess();
+let orient = 'white', onMove = () => {}, onSquare = null;
+const cg = Chessground($('board'), {
+  movable: { free: false, showDests: true, events: { after: (o, d) => onMove(o + d) } },
+  highlight: { lastMove: true, check: true }, animation: { duration: 200 },
+});
+function dests(c) {
+  const m = new Map();
+  for (const mv of c.moves({ verbose: true })) { if (!m.has(mv.from)) m.set(mv.from, []); m.get(mv.from).push(mv.to); }
+  return m;
+}
+function setPos(fen, { last, interactive = true } = {}) {
+  B.load(fen);
+  const turn = B.turn() === 'w' ? 'white' : 'black';
+  cg.set({ fen, orientation: orient, turnColor: turn, lastMove: last, check: B.inCheck(), selected: undefined,
+    movable: { color: interactive ? turn : undefined, dests: interactive ? dests(B) : new Map() } });
+  cg.setShapes([]);
+}
+function sync(m) { cg.set({ fen: B.fen(), lastMove: [m.from, m.to], check: B.inCheck(), turnColor: B.turn() === 'w' ? 'white' : 'black' }); }
+const lock = () => cg.set({ movable: { color: undefined, dests: new Map() } });
+const arrow = (uci, brush = 'green') => cg.setShapes([{ orig: uci.slice(0, 2), dest: uci.slice(2, 4), brush }]);
+const circles = (sqs, brush = 'green') => cg.setShapes(sqs.map(s => ({ orig: s, brush })));
+$('board').addEventListener('click', e => {
+  if (!onSquare) return;
+  const r = $('board').getBoundingClientRect();
+  const f = Math.floor((e.clientX - r.left) / r.width * 8), k = Math.floor((e.clientY - r.top) / r.height * 8);
+  if (f < 0 || f > 7 || k < 0 || k > 7) return;
+  onSquare(orient === 'white' ? 'abcdefgh'[f] + (8 - k) : 'abcdefgh'[7 - f] + (k + 1));
+});
+let hintFn = () => {}, showFn = () => {}, nextFn = () => {};
+$('bHint').onclick = () => hintFn(); $('bShow').onclick = () => showFn(); $('bNext').onclick = () => nextFn();
+
+// ---------- data ----------
+const colorOf = g => g.players.white.user?.id === S.me ? 'white' : 'black';
+const resultOf = g => !g.winner ? 'D' : g.winner === colorOf(g) ? 'W' : 'L';
+const isMine = (g, i) => (i % 2 === 0) === (colorOf(g) === 'white');
+const oppName = g => g.players[colorOf(g) === 'white' ? 'black' : 'white'].user?.name || 'bilgisayar';
+const gameInfo = g => `${new Date(g.createdAt).toLocaleDateString('tr-TR')} tarihli oyun, rakip ${oppName(g)}.`;
+function positions(g) {
+  if (g._pos) return g._pos;
+  const c = new Chess(), out = [{ fen: c.fen() }];
+  try { for (const s of g.moves.split(' ')) { const m = c.move(s); out.push({ fen: c.fen(), last: [m.from, m.to], uci: m.from + m.to + (m.promotion || ''), san: m.san }); } } catch {}
+  return (g._pos = out);
+}
+function mistakeAt(g, i, best, comment) {
+  const pos = positions(g);
+  if (!pos[i + 1]) return null;
+  return { key: `${g.id}:${i}`, g, ply: i, fen: pos[i].fen, last: pos[i].last, playedSan: pos[i + 1].san, best, ex: explain(pos[i].fen, pos[i + 1].uci, best, comment) };
+}
+function buildMistakes() {
+  const out = [];
+  for (const g of S.games) {
+    g.analysis?.forEach((e, i) => {
+      if (isMine(g, i) && e.judgment?.name === 'Blunder' && e.best) { const m = mistakeAt(g, i, e.best, e.judgment.comment); if (m) out.push(m); }
+    });
+    const n = g.moves.split(' ').length;
+    if (g.status === 'stalemate' && isMine(g, n - 1)) { const m = mistakeAt(g, n - 1, null); if (m) out.push(m); }
+  }
+  return out;
+}
+const profile = () => S.mistakes.reduce((p, m) => (p[m.ex.kind] = (p[m.ex.kind] || 0) + 1, p), {});
+function thinkStats() {
+  const bad = new Set(S.mistakes.map(m => m.key)), bl = [], ok = [];
+  for (const g of S.games) {
+    if (!g.clocks) continue;
+    thinkTimes(g).forEach((v, i) => { if (v == null || v < 0 || !isMine(g, i) || i < 10) return; (bad.has(`${g.id}:${i}`) ? bl : ok).push(v); });
+  }
+  return { bl: median(bl), ok: median(ok), n: bl.length };
+}
+
+// Local-first data: veri/veri.js (written by cek.mjs) + browser cache; lichess is asked only for newer games.
+// ponytail: localStorage (~5 MB) fits a few thousand games; move to IndexedDB if it ever overflows.
+function show(user, games) {
+  const first = !S.loaded;
+  S.user = user;
+  S.games = games.filter(g => g.variant === 'standard' && g.moves);
+  S.mistakes = buildMistakes().concat(engineMistakes()); S.hunts = null; S.loaded = true;
+  $('helloTitle').textContent = `Merhaba ${user.username}!`;
+  homeSay(insight(), 'happy');
+  renderHome(); renderKarne();
+  if (first && MODES[S.mode]) go(S.mode);
+}
+async function load() {
+  S.me = $('user').value.trim().toLowerCase();
+  if (!S.me) return;
+  store.set('user', S.me);
+  S.loaded = false;
+  const file = window.LICHESS_VERI?.user?.id === S.me ? window.LICHESS_VERI : null;
+  const cache = store.get('veri:' + S.me, null);
+  const byId = new Map([...(file?.games || []), ...(cache?.games || [])].map(g => [g.id, g]));
+  const sorted = () => [...byId.values()].sort((a, b) => b.createdAt - a.createdAt);
+  let games = sorted();
+  const user = (file?.updated || 0) > (cache?.updated || 0) ? file?.user : cache?.user || file?.user;
+  if (user && games.length) show(user, games);
+  else homeSay('Oyunlarını ilk kez indiriyorum, biraz sürebilir…', 'think');
+  try {
+    const since = games.length ? games[0].createdAt + 1 : 0;
+    const [u, txt] = await Promise.all([
+      fetch(`https://lichess.org/api/user/${encodeURIComponent(S.me)}`, { headers: auth() }).then(r => { if (!r.ok) throw new Error(`“${S.me}” adlı lichess hesabı bulunamadı`); return r.json(); }),
+      fetch(`https://lichess.org/api/games/user/${encodeURIComponent(S.me)}?evals=true&accuracy=true&opening=true&clocks=true${since ? `&since=${since}` : ''}`, { headers: { Accept: 'application/x-ndjson', ...auth() } }).then(r => {
+        if (!r.ok) throw new Error(r.status === 429 ? 'Lichess şu an çok fazla istek aldı. Bir dakika sonra sayfayı yenile' : `Oyunlar alınamadı (hata ${r.status})`);
+        return r.text();
+      }),
+    ]);
+    const fresh = txt.trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
+    fresh.forEach(g => byId.set(g.id, g));
+    games = sorted();
+    try { localStorage.setItem('veri:' + S.me, JSON.stringify({ user: u, games, updated: Date.now() }, (k, v) => k.startsWith('_') ? undefined : v)); } catch {}
+    if (fresh.length || !S.loaded) show(u, games); else { S.user = u; renderKarne(); }
+    if (fresh.length) $('engine').textContent = `${fresh.length} yeni oyun eklendi.`;
+  } catch (e) {
+    if (!S.loaded) return homeSay(`${e.message}. Karnem sayfasında hesap adını kontrol et.`, 'sad');
+    $('engine').textContent = 'Yeni oyunlar alınamadı, kayıtlı oyunlarla çalışıyorum.';
+  }
+  analyzeUnanalyzed();
+}
+function insight() {
+  const top = Object.entries(profile()).filter(([k]) => k !== 'diger').sort((a, b) => b[1] - a[1])[0];
+  const t = thinkStats(), parts = [];
+  if (top) parts.push(`Oyunlarındaki ${S.mistakes.length} büyük hatayı inceledim. En sık olanı: <b>${KINDS[top[0]].ad.toLocaleLowerCase('tr')}</b> (${top[1]} kez).`);
+  if (t.n >= 5 && t.bl < t.ok * 0.75) parts.push(`Hata yaptığın hamlelerde genelde <b>${Math.round(t.bl)} saniye</b> düşünmüşsün, diğerlerinde ${Math.round(t.ok)} saniye. Acele edince hata geliyor!`);
+  parts.push('Bugünkü antrenmanı senin hatalarına göre hazırladım.');
+  return parts.join(' ');
+}
+
+// ---------- Stockfish (background): finds blunders in games lichess never analyzed ----------
+// ponytail: asm.js stockfish 10, depth 10 (~0.3 s/position), last 15 unanalyzed losses only.
+let engine, engineQ = Promise.resolve();
+function evalFen(fen) {
+  engine ??= new Worker(URL.createObjectURL(new Blob(["importScripts('https://cdn.jsdelivr.net/npm/stockfish.js@10.0.2/stockfish.js')"], { type: 'application/javascript' })));
+  const run = () => new Promise(res => {
+    let score = 0;
+    engine.onmessage = e => {
+      const l = String(e.data), m = l.match(/score (cp|mate) (-?\d+)/);
+      if (m) score = m[1] === 'cp' ? +m[2] : (+m[2] > 0 ? 10000 : -10000);
+      if (l.startsWith('bestmove')) res({ score, best: l.split(' ')[1] });
+    };
+    engine.postMessage('position fen ' + fen); engine.postMessage('go depth 10');
+  });
+  return (engineQ = engineQ.then(run));
+}
+// Engine results are cached per user, so each game is analyzed only once.
+const motorKey = () => 'motor:' + S.me;
+function engineMistakes() {
+  const mc = store.get(motorKey(), { ids: [], found: [] }), byId = new Map(S.games.map(g => [g.id, g]));
+  return mc.found.map(f => byId.has(f.id) && mistakeAt(byId.get(f.id), f.ply, f.best)).filter(Boolean);
+}
+async function analyzeUnanalyzed() {
+  if (S.engineRunning) return;
+  S.engineRunning = true;
+  const mc = store.get(motorKey(), { ids: [], found: [] }), done = new Set(mc.ids);
+  const todo = S.games.filter(g => !g.analysis && resultOf(g) === 'L' && !done.has(g.id)).slice(0, 15);
+  let found = 0;
+  const clamp = v => Math.max(-1500, Math.min(1500, v));
+  for (const [n, g] of todo.entries()) {
+    $('engine').textContent = `Puhu analiz edilmemiş kayıplarına bakıyor: ${n + 1} / ${todo.length} oyun, ${found} yeni hata bulundu.`;
+    const pos = positions(g);
+    let prev = await evalFen(pos[0].fen);
+    for (let i = 0; i < pos.length - 1; i++) {
+      const cur = await evalFen(pos[i + 1].fen);
+      if (isMine(g, i) && clamp(prev.score) - clamp(-cur.score) >= 300 && clamp(-cur.score) < 200 && /^[a-h][1-8][a-h][1-8]/.test(prev.best || '')) {
+        const m = mistakeAt(g, i, prev.best); if (m) { S.mistakes.push(m); mc.found.push({ id: g.id, ply: i, best: prev.best }); found++; }
+      }
+      prev = cur;
+    }
+    mc.ids.push(g.id); store.set(motorKey(), mc);
+  }
+  S.engineRunning = false;
+  $('engine').textContent = todo.length ? `Puhu ${todo.length} oyuna daha baktı ve ${found} yeni hata ekledi.` : '';
+  if (found) { homeSay(insight(), 'happy'); renderKarne(); }
+}
+
+// ---------- mode 1: Hatalarım (own blunders, spaced repetition) ----------
+const T = {};
+function nextMistake() {
+  onSquare = null; onMove = hataMove; hintFn = hataHint; showFn = hataShow; nextFn = nextMistake;
+  if (!S.loaded) return coachSay('Oyunların yükleniyor, biraz bekle.', 'think');
+  if (!S.mistakes.length) return coachSay('Henüz analizli hata bulamadım. Ben arka planda oyunlarına bakıyorum, birazdan tekrar dene.', 'think');
+  const srs = store.get('srs', {}), now = Date.now();
+  const due = S.mistakes.filter(m => srs[m.key] && srs[m.key].due <= now), fresh = S.mistakes.filter(m => !srs[m.key]);
+  const pool = due.length ? due : fresh.length ? fresh : S.mistakes;
+  Object.assign(T, { it: pool[Math.floor(Math.random() * pool.length)], wrong: 0, done: false, recorded: false });
+  orient = colorOf(T.it.g);
+  setPos(T.it.fen, { last: T.it.last });
+  $('info').innerHTML = `${due.includes(T.it) ? 'Tekrar zamanı gelen pozisyon. ' : ''}${gameInfo(T.it.g)} <a href="https://lichess.org/${T.it.g.id}#${T.it.ply}" target="_blank" rel="noopener">Oyunu lichess’te aç</a>`;
+  coachSay(T.it.ex.kind === 'pat'
+    ? `Bu pozisyonu hatırlıyor musun? Burada <b>${trSan(T.it.playedSan)}</b> oynadın ve oyun PAT oldu. Bu sefer pat yapmadan devam et!`
+    : `Bu pozisyonu hatırlıyor musun? Burada <b>${trSan(T.it.playedSan)}</b> oynadın ve bu büyük bir hataydı. Daha iyi hamleyi bul!`, 'think');
+}
+function hataRecord(ok) {
+  if (T.recorded) return; T.recorded = true;
+  const srs = store.get('srs', {}); srs[T.it.key] = leitnerNext(srs[T.it.key], ok); store.set('srs', srs);
+  masteryAdd(T.it.ex.kind, ok);
+}
+function hataMove(uci) {
+  if (T.done) return;
+  const fen = B.fen(), m = playUci(B, uci);
+  if (!m) return;
+  sync(m);
+  const good = T.it.ex.kind === 'pat' ? !B.isStalemate() && !B.isDraw() : uci.slice(0, 4) === T.it.best.slice(0, 4) || B.isCheckmate();
+  if (good) {
+    T.done = true; lock(); hataRecord(T.wrong === 0); addStar(); bump('hata');
+    coachSay(`<b>${trSan(m.san)}</b>, aferin!${B.isCheckmate() ? ' Hem de MAT!' : ''} Peki oyunda neden hata yapmıştın? ${T.it.ex.text}`, 'happy', T.it.ex.rule);
+    return;
+  }
+  T.wrong++; hataRecord(false); lock();
+  const ex = explain(fen, uci, null);
+  coachSay(ex.kind !== 'diger' ? `<b>${trSan(m.san)}</b> olmaz. ${ex.text} Tekrar dene!` : `<b>${trSan(m.san)}</b> değil. Tekrar dene!`, 'sad', ex.kind !== 'diger' ? ex.rule : null);
+  setTimeout(() => setPos(T.it.fen, { last: T.it.last }), 900);
+}
+function hataHint() {
+  if (!T.it || T.done) return;
+  if (T.it.best) { circles([T.it.best.slice(0, 2)], 'yellow'); coachSay('Sarı işaretli taşa bak. Onunla ne yapabilirsin?', 'think'); }
+  else coachSay('Rakip şahın gidebileceği kareleri say. Hiç kare kalmıyorsa o hamle pat olur.', 'think');
+}
+function hataShow() {
+  if (!T.it || T.done) return;
+  T.done = true; lock(); hataRecord(false);
+  if (T.it.best) arrow(T.it.best);
+  coachSay(`${T.it.best ? `En iyi hamle oktaki: <b>${trSan(T.it.ex.bestSan)}</b>. ` : ''}Oyunda neden hata yapmıştın? ${T.it.ex.text}`, 'wow', T.it.ex.rule);
+}
+
+// ---------- mode 2: Tehdit avı (spot your hanging piece / their free piece) ----------
+function buildHunts() {
+  const out = [];
+  for (const g of S.games.slice(0, 100)) {
+    const pos = positions(g), my = colorOf(g)[0], their = my === 'w' ? 'b' : 'w';
+    let got = 0;
+    for (let i = 8; i < pos.length - 1 && got < 2; i++) {
+      if (!isMine(g, i) || new Chess(pos[i].fen).inCheck()) continue;
+      const big = h => VAL[h.type] >= 3;
+      const dang = hangingPieces(pos[i].fen, my).filter(big), free = hangingPieces(pos[i].fen, their).filter(big);
+      if (!dang.length === !free.length) continue; // exactly one kind of target
+      out.push({ type: dang.length ? 'tehlike' : 'bedava', g, ...pos[i], targets: (dang.length ? dang : free) });
+      got++; i += 8;
+    }
+  }
+  return shuffle(out);
+}
+const H = {};
+function nextHunt() {
+  onMove = () => {}; onSquare = huntClick; hintFn = huntHint; showFn = huntShow; nextFn = nextHunt;
+  if (!S.loaded) return coachSay('Oyunların yükleniyor, biraz bekle.', 'think');
+  S.hunts ??= buildHunts();
+  if (!S.hunts.length) return coachSay('Oyunlarında uygun pozisyon bulamadım.', 'sad');
+  const it = S.hunts.shift(); S.hunts.push(it);
+  Object.assign(H, { it, wrong: 0, done: false });
+  orient = colorOf(it.g);
+  setPos(it.fen, { last: it.last, interactive: false });
+  $('info').innerHTML = `${gameInfo(it.g)} Sıra sende. Tahtada bir kareye tıkla.`;
+  coachSay(it.type === 'tehlike' ? 'Rakip senin bir taşını bedavaya alabilir. Hangisi? Üstüne tıkla!' : 'Rakibin bir taşı korumasız duruyor. Bul ve üstüne tıkla!', 'think');
+}
+function huntClick(sq) {
+  if (H.done) return;
+  const it = H.it, hit = it.targets.find(t => t.sq === sq);
+  if (!hit) {
+    H.wrong++;
+    cg.setShapes([{ orig: sq, brush: 'red' }]);
+    return coachSay(it.type === 'tehlike' ? 'Orada değil. Rakip taşlarının hangi karelere baktığını tek tek kontrol et.' : 'Orada değil. Hangi rakip taşını hiçbir rakip taşı korumuyor?', 'sad');
+  }
+  H.done = true; addStar(); bump('avci'); masteryAdd(it.type === 'tehlike' ? 'tehdit' : 'bedava', H.wrong === 0);
+  circles(it.targets.map(t => t.sq));
+  const name = it.type === 'tehlike' ? { p: 'piyonun', n: 'atın', b: 'filin', r: 'kalen', q: 'vezirin' }[hit.type] : PN[hit.type][2];
+  coachSay(it.type === 'tehlike'
+    ? `Evet! ${sq} karesindeki ${name} tehlikedeydi. Rakip onu bedavaya alabilirdi. Oyunda bunu fark etmiş miydin?`
+    : `Evet! Rakibin ${sq} karesindeki ${name} korumasızdı. Bedava taşları kaçırma!`, 'happy',
+    it.type === 'tehlike' ? KINDS.tehdit.kural : KINDS.bedava.kural);
+}
+function huntHint() {
+  if (H.done || !H.it) return;
+  const t = H.it.targets[0].sq, c = new Chess(H.it.fen);
+  const attackerColor = H.it.type === 'tehlike' ? (colorOf(H.it.g) === 'white' ? 'b' : 'w') : colorOf(H.it.g)[0];
+  const a = c.attackers(t, attackerColor)[0];
+  if (a) { circles([a], 'yellow'); coachSay('Sarı işaretli taş birine saldırıyor. Kime?', 'think'); }
+}
+function huntShow() { if (H.done || !H.it) return; H.done = true; masteryAdd(H.it.type === 'tehlike' ? 'tehdit' : 'bedava', false); circles(H.it.targets.map(t => t.sq)); coachSay('Yeşil işaretli taş. Bir dahaki sefere sen bul!', 'wow'); }
+
+// ---------- mode 3: Bulmaca (adaptive themes + local stalemate trap) ----------
+const THEMES = [['patTrap', 'Pat tuzağı'], ['mateIn1', '1 hamlede mat'], ['mateIn2', '2 hamlede mat'], ['hangingPiece', 'Korumasız taş'], ['fork', 'Çatal'], ['pin', 'Açmaz'], ['defensiveMove', 'Savunma'], ['middlegame', 'Oyun ortası'], ['endgame', 'Oyun sonu']];
+const P = { theme: null };
+function renderChips() {
+  const rec = pickTheme(profile(), store.get('mastery', {}));
+  P.theme ??= rec;
+  $('chips').innerHTML = THEMES.map(([k, n]) => `<button class="chip" data-th="${k}" aria-pressed="${k === P.theme}">${n}${k === rec ? ' <span class="rec" title="Puhu öneriyor">★</span>' : ''}</button>`).join('');
+  $('chips').querySelectorAll('[data-th]').forEach(b => b.onclick = () => { P.theme = b.dataset.th; renderChips(); nextPuzzle(); });
+}
+function difficulty() {
+  const h = store.get('pzHist', []).slice(-6);
+  if (h.length < 3) return 'easier';
+  const r = h.filter(Boolean).length / h.length;
+  return r > 0.8 ? 'normal' : r < 0.4 ? 'easiest' : 'easier';
+}
+const themeKind = th => Object.keys(KINDS).find(k => KINDS[k].tema === th);
+function puzzleSolved() {
+  lock(); addStar(); bump('bulmaca');
+  const h = store.get('pzHist', []); h.push(P.wrong === 0); store.set('pzHist', h.slice(-20));
+  const k = themeKind(P.theme); if (k) masteryAdd(k, P.wrong === 0);
+  coachSay(P.wrong === 0 ? 'Çözdün, hem de ilk denemede!' : 'Çözdün! Bir sonrakini ilk denemede yapalım.', 'happy');
+}
+async function nextPuzzle() {
+  onSquare = null; nextFn = nextPuzzle;
+  const req = (P.req = (P.req || 0) + 1); // only the latest request may touch the board
+  Object.assign(P, { wrong: 0, step: 0, sol: null });
+  if (P.theme === 'patTrap') {
+    P.fen = makeStalemateTrap(); orient = 'white'; setPos(P.fen);
+    onMove = patMove; hintFn = () => coachSay('Şah çeken hamlelere bak. Ama rakip şahın kaçacak karesi kalmazsa ve şah çekmiyorsan pat olur.', 'think');
+    showFn = () => { const c = new Chess(P.fen); const m = c.moves({ verbose: true }).find(m => { c.move(m); const r = c.isCheckmate(); c.undo(); return r; }); arrow(m.from + m.to); lock(); };
+    $('info').textContent = 'Puhu bu pozisyonu senin için üretti.';
+    return coachSay('Beyaz oynar. Tek hamlede MAT yap! Dikkat, burada bir de PAT tuzağı var.', 'think');
+  }
+  onMove = puzzleMove;
+  hintFn = () => P.sol && circles([P.sol[P.step].slice(0, 2)], 'yellow');
+  showFn = () => { if (P.sol) { P.wrong++; arrow(P.sol[P.step]); } };
+  coachSay('Bulmaca geliyor…', 'think');
+  try {
+    const d = await fetch(`https://lichess.org/api/puzzle/next?angle=${P.theme}&difficulty=${difficulty()}`).then(r => { if (!r.ok) throw 0; return r.json(); });
+    if (req !== P.req || S.mode !== 'bulmaca') return;
+    P.sol = d.puzzle.solution; P.fen = d.puzzle.fen;
+    orient = new Chess(P.fen).turn() === 'w' ? 'white' : 'black';
+    const lm = d.puzzle.lastMove; P.last = lm ? [lm.slice(0, 2), lm.slice(2, 4)] : undefined;
+    setPos(P.fen, { last: P.last });
+    $('info').innerHTML = `Zorluk ${d.puzzle.rating}. <a href="https://lichess.org/training/${d.puzzle.id}" target="_blank" rel="noopener">Lichess’te aç</a>`;
+    coachSay(`${orient === 'white' ? 'Beyaz' : 'Siyah'} oynar. En iyi hamleyi bul!`, 'think');
+  } catch { if (req === P.req) coachSay('Bulmaca alınamadı. İnternet bağlantını kontrol edip Sıradaki düğmesine bas.', 'sad'); }
+}
+function puzzleMove(uci) {
+  if (!P.sol || P.step >= P.sol.length) return;
+  const want = P.sol[P.step], fen = B.fen(), m = playUci(B, uci);
+  if (!m) return;
+  if (uci.slice(0, 4) !== want.slice(0, 4) && !B.isCheckmate()) {
+    P.wrong++;
+    const ex = explain(fen, uci, null);
+    coachSay(ex.kind !== 'diger' ? `<b>${trSan(m.san)}</b> olmaz. ${ex.text}` : `<b>${trSan(m.san)}</b> değil, tekrar dene.`, 'sad', ex.kind !== 'diger' ? ex.rule : null);
+    B.undo(); lock();
+    setTimeout(() => cg.set({ fen: B.fen(), lastMove: P.last, check: B.inCheck(), movable: { color: orient, dests: dests(B) } }), 700);
+    return;
+  }
+  sync(m); P.step++;
+  if (P.step >= P.sol.length || B.isCheckmate()) { P.step = P.sol.length; return puzzleSolved(); }
+  coachSay('Doğru! Devam et.', 'happy');
+  setTimeout(() => {
+    const r = playUci(B, P.sol[P.step]); P.step++; P.last = [r.from, r.to];
+    cg.set({ fen: B.fen(), lastMove: P.last, turnColor: orient, check: B.inCheck(), movable: { color: orient, dests: dests(B) } });
+  }, 450);
+}
+function patMove(uci) {
+  const m = playUci(B, uci);
+  if (!m) return;
+  sync(m);
+  if (B.isCheckmate()) { P.step = 1; return puzzleSolved(); }
+  P.wrong++; lock();
+  if (B.isStalemate()) coachSay(`<b>${trSan(m.san)}</b> ile ${KINDS.pat.yaz()}`, 'sad', KINDS.pat.kural);
+  else coachSay(`<b>${trSan(m.san)}</b> mat değil. Tekrar dene!`, 'sad');
+  setTimeout(() => setPos(P.fen), 1000);
+}
+
+// ---------- Karnem ----------
+function renderKarne() {
+  const p = S.user.perfs, prof = profile(), kinds = Object.entries(prof).sort((a, b) => b[1] - a[1]);
+  const max = Math.max(1, ...kinds.map(k => k[1])), t = thinkStats(), mastery = store.get('mastery', {});
+  const ops = {};
+  for (const g of S.games) {
+    const k = (g.opening?.name || '?').split(':')[0] + (colorOf(g) === 'white' ? ' (beyazla)' : ' (siyahla)');
+    ops[k] ??= { W: 0, L: 0, D: 0 }; ops[k][resultOf(g)]++;
+  }
+  const opRows = Object.entries(ops).filter(([, r]) => r.W + r.L + r.D >= 4).sort((a, b) => (a[1].W - a[1].L) - (b[1].W - b[1].L)).slice(0, 6)
+    .map(([k, r]) => `<tr><td>${k}</td><td class="n">${r.W}</td><td class="n">${r.D}</td><td class="n">${r.L}</td></tr>`).join('');
+  const tmax = Math.max(t.bl, t.ok, 1);
+  const mRows = Object.entries(mastery).filter(([k]) => KINDS[k]).map(([k, m]) =>
+    `<li><span>${KINDS[k].ad}</span><span class="track"><span class="fill" style="display:block;width:${m.ok / m.n * 100}%" title="${m.ok} / ${m.n} ilk denemede doğru"></span></span><span>%${Math.round(m.ok / m.n * 100)}</span></li>`).join('');
+  $('karneBody').innerHTML = `
+    <section><dl class="stats">
+      <div><dt>Rapid</dt><dd>${p.rapid?.rating ?? '–'}</dd></div>
+      <div><dt>Blitz</dt><dd>${p.blitz?.rating ?? '–'}</dd></div>
+      <div><dt>Bulmaca</dt><dd>${p.puzzle?.rating ?? '–'}</dd></div>
+      <div><dt>Toplam oyun</dt><dd>${S.user.count?.all ?? '–'}</dd></div>
+    </dl></section>
+    <section><h2>Hata türlerim</h2><p class="sub">Son ${S.games.length} oyundaki ${S.mistakes.length} büyük hata, Puhu’nun bulduğu nedene göre.</p>
+      <ul class="bars">${kinds.map(([k, n]) => `<li><span>${KINDS[k].ad}</span><span class="track"><span class="fill" style="display:block;width:${n / max * 100}%" title="${KINDS[k].ad}: ${n} hata"></span></span><span>${n}</span></li>`).join('')}</ul></section>
+    ${t.n >= 3 ? `<section><h2>Düşünme süresi</h2><p class="sub">Hamle başına düşünme süresinin ortancası, saniye.</p>
+      <ul class="bars">
+        <li><span>Hata yaptığım hamleler</span><span class="track"><span class="fill" style="display:block;width:${t.bl / tmax * 100}%"></span></span><span>${Math.round(t.bl)}</span></li>
+        <li><span>Diğer hamlelerim</span><span class="track"><span class="fill alt" style="display:block;width:${t.ok / tmax * 100}%"></span></span><span>${Math.round(t.ok)}</span></li>
+      </ul></section>` : ''}
+    ${mRows ? `<section><h2>Ustalık</h2><p class="sub">Puhu’yla çalıştıkça ilk denemede doğru yaptığın oran.</p><ul class="bars">${mRows}</ul></section>` : ''}
+    <section><h2>Açılışlarım</h2><p class="sub">En az 4 kez oynadıkların, en zorlandığın en üstte.</p>
+      <table><tr><th>Açılış</th><th class="n">G</th><th class="n">B</th><th class="n">M</th></tr>${opRows}</table></section>`;
+}
+$('acct').onsubmit = e => { e.preventDefault(); load(); };
+
+// ---------- login: Lichess OAuth2 with PKCE (no server; the password never reaches this page) ----------
+const LOCAL = location.protocol === 'file:'; // opened from disk: no login, use the username field
+const CLIENT_ID = 'puhu-koc';
+const redirectUri = () => location.origin + location.pathname;
+const b64url = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const auth = () => store.get('token', null) ? { Authorization: 'Bearer ' + store.get('token', null) } : {};
+async function startLogin() {
+  const verifier = b64url(crypto.getRandomValues(new Uint8Array(32))), state = b64url(crypto.getRandomValues(new Uint8Array(16)));
+  sessionStorage.setItem('pkce', JSON.stringify({ verifier, state }));
+  const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
+  location.href = 'https://lichess.org/oauth?' + new URLSearchParams({
+    response_type: 'code', client_id: CLIENT_ID, redirect_uri: redirectUri(), code_challenge_method: 'S256', code_challenge: challenge, state,
+  });
+}
+async function finishLogin() {
+  const q = new URLSearchParams(location.search);
+  if (!q.has('code') && !q.has('error')) return;
+  history.replaceState(null, '', location.pathname + location.hash);
+  const saved = JSON.parse(sessionStorage.getItem('pkce') || '{}');
+  sessionStorage.removeItem('pkce');
+  if (q.has('error')) throw new Error('Giriş iptal edildi. Tekrar dene.');
+  if (q.get('state') !== saved.state) throw new Error('Giriş doğrulanamadı. Tekrar dene.');
+  const r = await fetch('https://lichess.org/api/token', { method: 'POST', body: new URLSearchParams({
+    grant_type: 'authorization_code', code: q.get('code'), code_verifier: saved.verifier, redirect_uri: redirectUri(), client_id: CLIENT_ID }) });
+  if (!r.ok) throw new Error('Lichess girişi onaylamadı. Tekrar dene.');
+  store.set('token', (await r.json()).access_token);
+}
+async function whoAmI() {
+  if (!store.get('token', null)) return null;
+  const r = await fetch('https://lichess.org/api/account', { headers: auth() });
+  if (r.status === 401) { localStorage.removeItem('token'); return null; }
+  if (!r.ok) throw new Error('Lichess’e ulaşılamadı. İnternet bağlantını kontrol et.');
+  return (await r.json()).id;
+}
+function showLogin(msg) {
+  document.body.classList.add('locked'); $('login').hidden = false;
+  if (msg) $('loginMsg').textContent = msg;
+}
+$('loginBtn').onclick = () => startLogin();
+$('logout').onclick = async () => {
+  await fetch('https://lichess.org/api/token', { method: 'DELETE', headers: auth() }).catch(() => {});
+  localStorage.removeItem('token'); location.reload();
+};
+
+// ---------- start ----------
+drawMe(); renderHome();
+window.koc = { S, T, H, P, Chess }; // read-only handle for e2e_test.mjs
+const startAt = location.hash.slice(1);
+go(MODES[startAt] || startAt === 'karne' ? startAt : 'bugun');
+(async () => {
+  if (LOCAL) { $('user').value = store.get('user', window.LICHESS_VERI?.user?.id || ''); return load(); }
+  let id = null;
+  try { await finishLogin(); id = await whoAmI(); } catch (e) { return showLogin(e.message); }
+  if (!id) return showLogin();
+  $('user').value = id; $('user').readOnly = true; $('loadBtn').hidden = true; $('logout').hidden = false;
+  load();
+})();
+</script>
+</body>
+</html>
