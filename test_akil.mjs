@@ -11,7 +11,7 @@ const block = html.split('// AKIL-BASLA')[1].split('// AKIL-BITIR')[0];
 const dir = mkdtempSync(join(tmpdir(), 'akil-'));
 const file = join(dir, 'akil.mjs');
 const chessUrl = pathToFileURL(join(process.cwd(), 'node_modules/chess.js/dist/esm/chess.js')).href;
-writeFileSync(file, `import { Chess } from '${chessUrl}';\n${block}\nexport { explain, hangingPieces, leitnerNext, pickTheme, makeStalemateTrap, thinkTimes, sayable, answer, dangerReport, parentMetrics, KINDS, difficultyFor, gameStats };`);
+writeFileSync(file, `import { Chess } from '${chessUrl}';\n${block}\nexport { explain, hangingPieces, leitnerNext, pickTheme, makeStalemateTrap, thinkTimes, sayable, answer, dangerReport, parentMetrics, KINDS, difficultyFor, gameStats, pendingReviews, reviewTruth, guessScore, reviewPgn };`);
 const A = await import(pathToFileURL(file).href);
 
 const cases = [
@@ -127,6 +127,42 @@ assert.equal(d3.mateThreat, 'd1');
   assert.equal(m.last30.late, 1);
   assert.equal(m.last30.fastShare, 1 / 5);
   assert.deepEqual(m.blunders, { recent: 2, before: null, n: 3 });            // 3 analyzed games: (0+2+4)/3, fewer than 2x10
+}
+
+// post-game review: which games wait, where the real mistake was, how close the child's guess was, PGN for Lichess
+{
+  const now = new Date(2026, 10, 21, 12).getTime(), D = 864e5;
+  const base = { variant: 'standard', moves: 'e4 e5 Nf3 Nc6 Bc4 Nf6 Ng5 d5 exd5 Nxd5', players: { white: { user: { id: 'kid' } }, black: { user: { id: 'x' } } } };
+  const games = [
+    { ...base, id: 'old', createdAt: now - 9 * D },                  // older than 7 days
+    { ...base, id: 'done', createdAt: now - 1 * D },                 // already reviewed
+    { ...base, id: 'short', createdAt: now - 1 * D, moves: 'e4 e5 Qh5' }, // too short
+    { ...base, id: 'b', createdAt: now - 2 * D },
+    { ...base, id: 'a', createdAt: now - 1 * 36e5 },
+    { ...base, id: 'chess960', createdAt: now - 36e5, variant: 'chess960' },
+  ];
+  assert.deepEqual(A.pendingReviews(games, { done: {} }, now).map(g => g.id), ['a', 'b']);
+
+  // truth: biggest eval swing among the child's own judged moves (white here: even plies)
+  const g = { ...base, id: 't', analysis: [
+    { eval: 30 }, { eval: 25 }, { eval: 20, judgment: { name: 'Inaccuracy' } }, { eval: 20 },
+    { eval: -150, judgment: { name: 'Mistake' } }, { eval: -140 }, { eval: -600, judgment: { name: 'Blunder' } }, { eval: -610 } ] };
+  assert.equal(A.reviewTruth(g, 'kid', []), 6);                      // -140 -> -600 is the largest drop
+  assert.equal(A.reviewTruth({ ...base, id: 'n' }, 'kid', [{ ply: 8 }, { ply: 4 }]), 4);   // no analysis: earliest known mistake
+  assert.equal(A.reviewTruth({ ...base, id: 'n' }, 'kid', []), null);
+
+  assert.equal(A.guessScore(6, 6), 2);
+  assert.equal(A.guessScore(4, 6), 1);                               // one own move earlier: close
+  assert.equal(A.guessScore(0, 6), 0);
+  assert.equal(A.guessScore(null, 6), 0);                            // "no big mistake" when there was one
+  assert.equal(A.guessScore(null, null), 2);                         // clean game, child said clean
+
+  const pgn = A.reviewPgn({ ...base, id: 'p', createdAt: now, winner: 'black', players: { white: { user: { id: 'kid', name: 'Kid' } }, black: { user: { id: 'x', name: 'Rival' } } } },
+    { guess: 4, truth: 6, lesson: 'Hamleden önce {rakibe} bak', feeling: 'Zordu' });
+  assert.match(pgn, /\[White "Kid"\]/); assert.match(pgn, /\[Result "0-1"\]/);
+  assert.match(pgn, /3\. Bc4 \{Benim tahminim: en büyük hatam bu\.\}/);
+  assert.match(pgn, /4\. Ng5 \{Puhu: asıl hata bu hamleydi\.\}/);
+  assert.match(pgn, /\{Dersim: Hamleden önce \(rakibe\) bak\. Maç: Zordu\.\} 0-1$/);   // braces inside a comment are escaped
 }
 
 console.log('OK: all brain tests pass');

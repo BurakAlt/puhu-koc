@@ -93,6 +93,25 @@ await page.waitForFunction(() => document.querySelectorAll('#veliBody .kpi').len
 assert.equal(await page.$$eval('#veliBody svg.chart', s => s.length) >= 1, true, 'weekly chart drawn');
 await page.screenshot({ path: new URL('./veli_e2e.png', import.meta.url).pathname.replace(/^\//, ''), fullPage: true });
 
+// 3d. Post-game review: feeling -> own guess -> Puhu's finding -> lesson saved; home shows the lesson
+await page.click('[data-go="mac"]');
+await page.waitForSelector('[data-feel]', { timeout: 10000 });
+await page.click('[data-feel="Zordu"]');
+await page.waitForSelector('#macPick');
+// move the slider to the child's own first move, then pick it
+await page.evaluate(() => { const s = document.getElementById('macSlider'); const g = koc.R.g, white = g.players.white.user?.id === koc.S.me; s.value = white ? 1 : 2; s.dispatchEvent(new Event('input')); });
+assert.equal(await page.$eval('#macPick', b => b.disabled), false, 'own move can be picked');
+await page.click('#macPick');
+await page.waitForSelector('#macToLesson', { timeout: 120000 });     // may run the engine on an unanalyzed game
+console.log('review says:', (await say()).slice(0, 90));
+await page.click('#macToLesson');
+await page.click('[data-idea="0"]');
+await page.click('#macSave');
+const saved = await page.evaluate(() => { const all = JSON.parse(localStorage.getItem('incelenen:' + koc.S.me) || '{}'); return Object.values(all)[0]; });
+assert.equal(saved.his, 'Zordu'); assert.ok(saved.ders.length > 5); assert.ok([0, 1, 2].includes(saved.puan));
+assert.match(await say(), /Dersini kaydettim/);
+assert.match(await page.$eval('#macPanel', e => e.textContent), /giriş yap/, 'local mode explains the Lichess sign-in');
+
 // 4. Home reflects progress
 await page.click('[data-go="bugun"]');
 const steps = await page.$$eval('#steps li span', s => s.map(x => x.textContent));

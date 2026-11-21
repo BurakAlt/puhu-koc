@@ -124,6 +124,15 @@
   .chip[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: #fff; }
   .chip .rec { color: var(--sun-d); }
   .chip[aria-pressed="true"] .rec { color: var(--sun); }
+  .mac { display: grid; gap: 10px; }
+  .mac[hidden], .maccard[hidden] { display: none; }
+  .mac-nav { display: flex; gap: 6px; align-items: center; }
+  .mac-nav .btn { padding: 10px 12px; }
+  .mac-nav input[type="range"] { flex: 1; min-width: 0; accent-color: var(--plum); }
+  .mac textarea, .mac input[type="text"] { font: inherit; padding: 11px 14px; border: 2px solid var(--line); border-radius: 12px; width: 100%; }
+  .mac .status { font-size: 14px; color: var(--ink-2); margin: 0; }
+  .maccard { max-width: 900px; margin-top: 28px; background: var(--sheet); border: 3px solid var(--plum); border-radius: 18px; padding: 16px 20px; display: flex; gap: 16px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+  .maccard p { margin: 0; font-size: 18px; flex: 1 1 260px; }
   .ask { display: grid; gap: 8px; border-top: 2px solid var(--page); padding-top: 14px; }
   .ask label { font-weight: 700; }
   .ask-row { display: flex; gap: 8px; }
@@ -218,6 +227,7 @@
       <button data-go="hata"><span class="ic">↺</span>Hatalarım</button>
       <button data-go="avci"><span class="ic">◎</span>Tehdit avı</button>
       <button data-go="bulmaca"><span class="ic">♞</span>Bulmaca</button>
+      <button data-go="mac"><span class="ic">✎</span>Maç sonrası</button>
       <button data-go="karne"><span class="ic">▤</span>Karnem</button>
       <button data-go="veli"><span class="ic">◐</span>Ebeveyn</button>
     </nav>
@@ -238,6 +248,10 @@
         <h1 id="helloTitle">Merhaba!</h1>
         <div id="homeOwl" data-puhu></div>
         <div class="bubble" id="homeSay">Oyunlarına bakıyorum…</div>
+      </div>
+      <div class="maccard" id="macCard" hidden>
+        <p id="macCardText"></p>
+        <button class="btn primary" id="macCardBtn">Son maçına bakalım</button>
       </div>
       <div class="today">
         <h2>Bugünkü antrenman</h2>
@@ -261,6 +275,7 @@
         </div>
         <div class="rule" id="coachRule" hidden></div>
         <p class="info" id="info"></p>
+        <div class="mac" id="macPanel" hidden></div>
         <div class="chips" id="chips" hidden></div>
         <div class="actions">
           <button class="btn" id="bHint">İpucu</button>
@@ -572,6 +587,60 @@ function gameStats(g, me) {
   return { id: g.id, createdAt: g.createdAt, ownMoves, loss, allowedMate, missedMate, card };
 }
 
+// ---- Post-game review ("Maç sonrası sohbet") ----
+// Games from the last week that wait for a review, newest first.
+function pendingReviews(games, reviewed, now, days = 7) {
+  return games.filter(g => g.variant === 'standard' && g.moves && g.moves.split(' ').length >= 10
+    && now - g.createdAt <= days * 864e5 && !reviewed[g.id]).sort((a, b) => b.createdAt - a.createdAt);
+}
+// The child's biggest mistake in one game: largest eval drop among his judged moves (Lichess analysis),
+// else the earliest mistake Puhu knows for that game, else null (no known big mistake).
+function reviewTruth(g, me, gameMistakes) {
+  const white = g.players.white.user?.id === me;
+  const val = e => e?.mate != null ? (e.mate > 0 ? 1500 : -1500) : e?.eval != null ? Math.max(-1500, Math.min(1500, e.eval)) : null;
+  let best = null, bestDrop = 0;
+  (g.analysis || []).forEach((e, i) => {
+    if ((i % 2 === 0) !== white || !e.judgment) return;
+    const before = i ? val(g.analysis[i - 1]) : 0, after = val(e);
+    if (before == null || after == null) return;
+    const drop = white ? before - after : after - before;
+    if (drop > bestDrop) { bestDrop = drop; best = i; }
+  });
+  if (best != null) return best;
+  const plies = gameMistakes.map(m => m.ply).sort((a, b) => a - b);
+  return plies.length ? plies[0] : null;
+}
+// 2 = exact (or "clean game" on a clean game), 1 = within one own move or a guess on a clean game, 0 = elsewhere.
+function guessScore(guess, truth) {
+  if (truth == null) return guess == null ? 2 : 1;
+  if (guess == null) return 0;
+  return guess === truth ? 2 : Math.abs(guess - truth) <= 2 ? 1 : 0;
+}
+// PGN of a reviewed game for the child's private Lichess study, with his guess, Puhu's finding and his lesson.
+function reviewPgn(g, { guess, truth, lesson, feeling }) {
+  const esc = s => String(s).replace(/\{/g, '(').replace(/\}/g, ')');
+  const hdr = s => String(s).replace(/"/g, "'");
+  const name = c => g.players[c].user?.name || 'Lichess AI';
+  const result = g.winner === 'white' ? '1-0' : g.winner === 'black' ? '0-1' : '1/2-1/2';
+  const d = new Date(g.createdAt), date = `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
+  const out = [];
+  let afterComment = false;
+  g.moves.split(' ').forEach((san, i) => {
+    const no = Math.floor(i / 2) + 1;
+    out.push(i % 2 === 0 ? `${no}. ${san}` : afterComment ? `${no}... ${san}` : san);
+    const notes = [];
+    if (i === guess && i === truth) notes.push('Benim tahminim doğruydu: en büyük hatam bu.');
+    else { if (i === guess) notes.push('Benim tahminim: en büyük hatam bu.'); if (i === truth) notes.push('Puhu: asıl hata bu hamleydi.'); }
+    if (notes.length) out.push(`{${notes.join(' ')}}`);
+    afterComment = notes.length > 0;
+  });
+  const end = [lesson && `Dersim: ${esc(lesson).replace(/[.!?]*$/, '.')}`, feeling && `Maç: ${esc(feeling)}.`].filter(Boolean).join(' ');
+  if (end) out.push(`{${end}}`);
+  out.push(result);
+  return [`[Event "Puhu Defterim"]`, `[Site "https://lichess.org/${g.id}"]`, `[Date "${date}"]`, `[White "${hdr(name('white'))}"]`,
+    `[Black "${hdr(name('black'))}"]`, `[Result "${result}"]`, '', out.join(' ')].join('\n');
+}
+
 // Seconds spent on each ply from lichess clocks (centiseconds left after each ply).
 function thinkTimes(g) {
   const c = g.clocks || [], inc = g.clock?.increment || 0;
@@ -585,6 +654,7 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
 const today = () => new Date().toLocaleDateString('sv-SE');
+const escHtml = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const median = a => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
 const S = { games: [], me: '', user: null, mistakes: [], hunts: null, loaded: false, mode: 'bugun' };
@@ -694,10 +764,17 @@ function renderHome() {
   const t = totalStars(), cur = RANKS.filter(x => t >= x[2]).length - 1;
   $('ladder').innerHTML = RANKS.map(([g, n], i) => `<li class="${i < cur ? 'got' : i === cur ? 'now' : ''}"><span class="g" aria-hidden="true">${g}</span>${n}</li>`).join('');
   $('ladderNote').textContent = RANKS[cur + 1] ? `${RANKS[cur + 1][1]} rütbesine ${RANKS[cur + 1][2] - t} yıldız kaldı. Yardımsız doğru cevap 2 yıldız, ipucuyla doğru cevap 1 yıldız.` : 'En yüksek rütbedesin: Şah!';
+  const waiting = S.loaded ? pendingReviews(S.games, reviewed(), Date.now()).length : 0;
+  $('macCard').hidden = !waiting;
+  if (waiting) {
+    $('macCardText').textContent = waiting === 1 ? 'Konuşmadığımız yeni bir maçın var. Ona bakalım mı?'
+      : waiting <= 3 ? `Konuşmadığımız ${waiting} yeni maçın var. Sonuncusuna bakalım mı?` : 'Yeni maçların var. Sonuncusuna bakalım mı?';
+    $('macCardBtn').onclick = () => go('mac');
+  }
 }
 
 // ---------- navigation ----------
-const MODES = { hata: 'Hatalarım', avci: 'Tehdit avı', bulmaca: 'Bulmaca' };
+const MODES = { hata: 'Hatalarım', avci: 'Tehdit avı', bulmaca: 'Bulmaca', mac: 'Maç sonrası' };
 function go(mode) {
   S.mode = mode;
   history.replaceState(null, '', '#' + mode);
@@ -708,11 +785,18 @@ function go(mode) {
   countMode(mode, 'acilis');
   $('modeTitle').textContent = MODES[mode]; drawPill();
   $('chips').hidden = mode !== 'bulmaca';
+  $('macPanel').hidden = mode !== 'mac';
+  $('bHint').hidden = $('bShow').hidden = mode === 'mac';
+  $('bNext').textContent = mode === 'mac' ? 'Sonraki maç' : 'Sıradaki';
+  $('bNext').classList.toggle('primary', mode !== 'mac');               // in a review the step button is the main action
   $('info').innerHTML = '';
-  ({ hata: nextMistake, avci: nextHunt, bulmaca: () => { renderChips(); nextPuzzle(); } })[mode]();
+  ({ hata: nextMistake, avci: nextHunt, bulmaca: () => { renderChips(); nextPuzzle(); }, mac: nextReview })[mode]();
 }
 document.querySelectorAll('[data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
-function drawPill() { if (MODES[S.mode]) $('modePill').textContent = `Bugün ${Math.min(dayProgress()[S.mode] || 0, GOALS[S.mode])} / ${GOALS[S.mode]}`; }
+function drawPill() {
+  if (S.mode === 'mac') { $('modePill').textContent = 'Son 7 günün maçları'; return; }   // no backlog counter: no homework pressure
+  if (MODES[S.mode]) $('modePill').textContent = `Bugün ${Math.min(dayProgress()[S.mode] || 0, GOALS[S.mode])} / ${GOALS[S.mode]}`;
+}
 
 // ---------- board ----------
 const B = new Chess();
@@ -802,7 +886,7 @@ function show(user, games) {
 }
 
 // ---------- P3: engine-free outcome stats, cached per game, computed in small slices so the page never freezes ----------
-const RELEASES = [['Paket 1: ölçüm düzeltmeleri', '2026-11-21']];   // trend is read against these dates
+const RELEASES = [['Paket 1: ölçüm düzeltmeleri', '2026-11-21'], ['Maç sonrası sohbet', '2026-11-21']];   // trend is read against these dates
 const statsKey = () => 'stats:' + S.me;
 let statsRun = 0;
 async function startStats() {
@@ -884,6 +968,8 @@ function insight() {
   if (top) parts.push(`Oyunlarındaki ${S.mistakes.length} büyük hatayı inceledim. En sık olanı: <b>${KINDS[top[0]].ad.toLocaleLowerCase('tr')}</b> (${top[1]} kez).`);
   if (t.n >= 5 && t.bl < t.ok * 0.75) parts.push(`Hata yaptığın hamlelerde genelde <b>${Math.round(t.bl)} saniye</b> düşünmüşsün, diğerlerinde ${Math.round(t.ok)} saniye. Acele edince hata geliyor!`);
   parts.push('Bugünkü antrenmanı senin hatalarına göre hazırladım.');
+  const last = store.get('sonDers:' + S.me, null);
+  if (last?.ders) parts.push(`Geçen maçtan dersin: <b>“${escHtml(last.ders)}”</b>`);
   return parts.join(' ');
 }
 
@@ -909,25 +995,33 @@ function engineMistakes() {
   const mc = store.get(motorKey(), { ids: [], found: [] }), byId = new Map(S.games.map(g => [g.id, g]));
   return mc.found.map(f => byId.has(f.id) && mistakeAt(byId.get(f.id), f.ply, f.best)).filter(Boolean);
 }
+const engineDone = id => store.get(motorKey(), { ids: [] }).ids.includes(id);
+// Analyze one game with the engine; found blunders become practice cards. `priority` games (a review the child
+// is waiting for) pause the background loop, which shares the same engine.
+async function analyzeGame(g, { priority = false } = {}) {
+  if (engineDone(g.id)) return 0;
+  const clamp = v => Math.max(-1500, Math.min(1500, v)), pos = positions(g), found = [];
+  let prev = await evalFen(pos[0].fen);
+  for (let i = 0; i < pos.length - 1; i++) {
+    while (!priority && S.reviewBusy) await new Promise(r => setTimeout(r, 300));
+    const cur = await evalFen(pos[i + 1].fen);
+    if (isMine(g, i) && clamp(prev.score) - clamp(-cur.score) >= 300 && clamp(-cur.score) < 200 && /^[a-h][1-8][a-h][1-8]/.test(prev.best || '')) {
+      const m = mistakeAt(g, i, prev.best); if (m) { S.mistakes.push(m); found.push({ id: g.id, ply: i, best: prev.best }); }
+    }
+    prev = cur;
+  }
+  const mc = store.get(motorKey(), { ids: [], found: [] });            // re-read: another analysis may have saved meanwhile
+  if (!mc.ids.includes(g.id)) { mc.ids.push(g.id); mc.found.push(...found); store.set(motorKey(), mc); }
+  return found.length;
+}
 async function analyzeUnanalyzed() {
   if (S.engineRunning) return;
   S.engineRunning = true;
-  const mc = store.get(motorKey(), { ids: [], found: [] }), done = new Set(mc.ids);
-  const todo = S.games.filter(g => !g.analysis && resultOf(g) === 'L' && !done.has(g.id)).slice(0, 15);
+  const todo = S.games.filter(g => !g.analysis && resultOf(g) === 'L' && !engineDone(g.id)).slice(0, 15);
   let found = 0;
-  const clamp = v => Math.max(-1500, Math.min(1500, v));
   for (const [n, g] of todo.entries()) {
     $('engine').textContent = `Puhu analiz edilmemiş kayıplarına bakıyor: ${n + 1} / ${todo.length} oyun, ${found} yeni hata bulundu.`;
-    const pos = positions(g);
-    let prev = await evalFen(pos[0].fen);
-    for (let i = 0; i < pos.length - 1; i++) {
-      const cur = await evalFen(pos[i + 1].fen);
-      if (isMine(g, i) && clamp(prev.score) - clamp(-cur.score) >= 300 && clamp(-cur.score) < 200 && /^[a-h][1-8][a-h][1-8]/.test(prev.best || '')) {
-        const m = mistakeAt(g, i, prev.best); if (m) { S.mistakes.push(m); mc.found.push({ id: g.id, ply: i, best: prev.best }); found++; }
-      }
-      prev = cur;
-    }
-    mc.ids.push(g.id); store.set(motorKey(), mc);
+    found += await analyzeGame(g);
   }
   S.engineRunning = false;
   $('engine').textContent = todo.length ? `Puhu ${todo.length} oyuna daha baktı ve ${found} yeni hata ekledi.` : '';
@@ -1139,6 +1233,166 @@ function patMove(uci) {
   setTimeout(() => setPos(P.fen), 1000);
 }
 
+// ---------- mode 4: Maç sonrası sohbet (feeling -> own guess -> Puhu's finding -> one-line lesson -> Lichess) ----------
+// Runs only on finished games: no help is ever given during a live Lichess game (fair play).
+const R = {};
+const reviewed = () => store.get('incelenen:' + S.me, {});
+const moveLabel = ply => `${Math.floor(ply / 2) + 1}.${ply % 2 ? '..' : ''} ${trSan(positions(R.g)[ply + 1]?.san || '')}`;
+const FEELINGS = ['Kolaydı', 'Zordu', 'Şanssızdım', 'Çok eğlenceliydi'];
+function nextReview() {
+  onMove = () => {}; onSquare = null; nextFn = nextReview; hintFn = showFn = () => {};
+  $('macPanel').innerHTML = '';
+  if (!S.loaded) return coachSay('Oyunların yükleniyor, biraz bekle.', 'think');
+  const list = pendingReviews(S.games, reviewed(), Date.now());
+  drawPill();
+  if (!list.length) return coachSay('Son bir haftada konuşmadığımız maç kalmadı. Lichess’te bir maç oyna, sonra burada birlikte bakalım!', 'happy');
+  Object.assign(R, { g: list[0], step: 1, guess: undefined, truth: undefined, feeling: '', lesson: '', score: null });
+  orient = colorOf(R.g);
+  R.v = positions(R.g).length - 1;
+  showPly();
+  $('info').innerHTML = `${gameInfo(R.g)} <a href="https://lichess.org/${R.g.id}" target="_blank" rel="noopener">Maçı lichess’te aç</a>`;
+  coachSay(`Bu maçı ${{ W: 'kazandın', L: 'kaybettin', D: 'berabere bitirdin' }[resultOf(R.g)]}. Nasıl geçti?`, 'think');
+  $('macPanel').innerHTML = `<div class="chips">${FEELINGS.map(f => `<button class="chip" type="button" data-feel="${f}">${f}</button>`).join('')}</div>`;
+  $('macPanel').querySelectorAll('[data-feel]').forEach(b => b.onclick = () => { R.feeling = b.dataset.feel; askGuess(); });
+}
+function showPly() {
+  const p = positions(R.g)[R.v];
+  setPos(p.fen, { last: p.last, interactive: false });
+  if ($('macSlider')) $('macSlider').value = R.v;
+  if ($('macPick')) {
+    const mine = R.v > 0 && isMine(R.g, R.v - 1);
+    $('macPick').disabled = !mine;
+    $('macMove').textContent = R.v ? `${moveLabel(R.v - 1)} · ${mine ? 'senin hamlen' : 'rakibin hamlesi'}` : 'Başlangıç pozisyonu';
+  }
+}
+function askGuess() {
+  R.step = 2;
+  const n = positions(R.g).length - 1;
+  coachSay('Maçı geri sar. Sence en büyük hatan hangi hamleydi? O hamleye gel ve düğmeye bas. Puhu’nun cevabını sonra göreceğiz.', 'think');
+  $('macPanel').innerHTML = `
+    <div class="mac-nav">
+      <button class="btn" type="button" data-nav="first" aria-label="Başa dön">⏮</button>
+      <button class="btn" type="button" data-nav="prev" aria-label="Bir hamle geri">◀</button>
+      <input type="range" id="macSlider" min="0" max="${n}" value="${R.v}" aria-label="Maçta hamle">
+      <button class="btn" type="button" data-nav="next" aria-label="Bir hamle ileri">▶</button>
+      <button class="btn" type="button" data-nav="last" aria-label="Sona git">⏭</button>
+    </div>
+    <p class="status" id="macMove"></p>
+    <div class="actions"><button class="btn" type="button" id="macClean">Büyük hata yapmadım</button><button class="btn primary" type="button" id="macPick">En büyük hatam bu hamle</button></div>`;
+  const nav = { first: () => 0, prev: () => Math.max(0, R.v - 1), next: () => Math.min(n, R.v + 1), last: () => n };
+  $('macPanel').querySelectorAll('[data-nav]').forEach(b => b.onclick = () => { R.v = nav[b.dataset.nav](); showPly(); });
+  $('macSlider').oninput = e => { R.v = +e.target.value; showPly(); };
+  $('macPick').onclick = () => { R.guess = R.v - 1; revealTruth(); };
+  $('macClean').onclick = () => { R.guess = null; revealTruth(); };
+  showPly();
+}
+async function revealTruth() {
+  R.step = 3; $('macPanel').innerHTML = '';
+  const g = R.g;
+  if (!g.analysis && !engineDone(g.id)) {
+    coachSay('Puhu maçına bakıyor. Bu biraz sürebilir…', 'think');
+    S.reviewBusy = true;
+    try { await analyzeGame(g, { priority: true }); } finally { S.reviewBusy = false; }
+    if (R.g !== g || S.mode !== 'mac') return;                          // the child moved on meanwhile
+  }
+  const ms = S.mistakes.filter(m => m.g.id === g.id);
+  R.truth = reviewTruth(g, S.me, ms);
+  R.score = guessScore(R.guess, R.truth);
+  addStar(R.score);
+  const a = R.truth != null ? g.analysis?.[R.truth] : null;
+  R.m = R.truth != null ? ms.find(x => x.ply === R.truth) || mistakeAt(g, R.truth, a?.best || null, a?.judgment?.comment || '') : null;
+  let text;
+  if (R.truth == null) {
+    text = R.guess == null ? 'Ben de büyük bir hata görmedim. Harika maç!' : 'Ben bu maçta büyük bir hata görmedim. Senin seçtiğin anı yine de derse çevirebiliriz.';
+  } else {
+    R.v = R.truth; showPly();
+    if (R.m?.best) arrow(R.m.best);
+    const why = R.m ? ` ${R.m.ex.text}` : '';
+    text = R.score === 2 ? `Tam isabet! En büyük hatan gerçekten ${moveLabel(R.truth)} hamlesiydi.${why}`
+      : R.score === 1 ? `Çok yaklaştın! Asıl hata ${moveLabel(R.truth)} hamlesiydi.${why}`
+      : R.guess == null ? `Bu maçta bir büyük hata vardı: ${moveLabel(R.truth)}.${why}`
+      : `Puhu başka bir yerde gördü: ${moveLabel(R.truth)}.${why}`;
+    if (R.m?.best) text += ` Oktaki hamle daha iyiydi.`;
+  }
+  coachSay(text, R.score === 2 ? 'happy' : 'wow', R.m?.ex.rule || null);
+  $('macPanel').innerHTML = `<div class="actions"><button class="btn primary" type="button" id="macToLesson">Devam: dersimi seçeyim</button></div>`;
+  $('macToLesson').onclick = askLesson;
+}
+function askLesson() {
+  R.step = 4;
+  const ideas = [...new Set([R.m?.ex.rule, 'Hamleden önce rakibin ne istediğine bakacağım.', 'Taşımı koymadan önce o kareyi kim görüyor diye bakacağım.', 'Önce şah çekebilir miyim diye kontrol edeceğim.'].filter(Boolean))];
+  coachSay('Bu maçtan tek bir ders seç ya da kendi cümleni yaz. Bir sonraki maçından önce sana hatırlatacağım.', 'think');
+  $('macPanel').innerHTML = `
+    <div class="chips">${ideas.map((t, i) => `<button class="chip" type="button" data-idea="${i}">${escHtml(t)}</button>`).join('')}</div>
+    <label for="macLesson">Kendi cümlen</label>
+    <input type="text" id="macLesson" maxlength="140" autocomplete="off" placeholder="Örneğin: Kalemi korumasız bırakmayacağım.">
+    <div class="actions"><button class="btn primary" type="button" id="macSave">Dersimi kaydet</button></div>`;
+  $('macPanel').querySelectorAll('[data-idea]').forEach(b => b.onclick = () => { $('macLesson').value = ideas[+b.dataset.idea]; });
+  $('macSave').onclick = () => {
+    const lesson = $('macLesson').value.trim();
+    if (!lesson) return coachSay('Önce bir ders seç ya da yaz.', 'think');
+    R.lesson = lesson;
+    const all = reviewed();
+    all[R.g.id] = { t: Date.now(), gameAt: R.g.createdAt, his: R.feeling, tahmin: R.guess, gercek: R.truth, puan: R.score, ders: lesson };
+    store.set('incelenen:' + S.me, all);
+    store.set('sonDers:' + S.me, { ders: lesson, t: Date.now() });
+    countMode('mac', 'bitis');
+    finishReview();
+  };
+}
+function finishReview() {
+  R.step = 5;
+  drawPill(); renderHome();
+  coachSay(`Dersini kaydettim: “${escHtml(R.lesson)}”. Bir sonraki maçından önce sana hatırlatacağım.`, 'happy');
+  const critical = R.truth ?? R.guess;
+  $('macPanel').innerHTML = store.get('token', null) ? `
+    <div class="actions">
+      <button class="btn" type="button" id="macStudy">Lichess defterime ekle</button>
+      ${critical != null ? '<button class="btn" type="button" id="macAi">Bu pozisyondan bilgisayara karşı oyna</button>' : ''}
+    </div>
+    <p class="status" id="macStatus">Defter lichess’te gizli bir çalışma olarak durur. Bilgisayara karşı oyun puansızdır.</p>`
+    : '<p class="status">Maçı lichess’teki defterine eklemek için Puhu’yu siteden açıp Lichess ile giriş yap.</p>';
+  const run = async (btn, job, okText) => {
+    btn.disabled = true; $('macStatus').textContent = 'Lichess’e gönderiliyor…';
+    try { const url = await job(); $('macStatus').innerHTML = `${okText} <a href="${url}" target="_blank" rel="noopener">Lichess’te aç</a>`; }
+    catch (e) {
+      btn.disabled = false;
+      $('macStatus').textContent = e.message === 'izin' ? 'Bunun için lichess’in yeni bir izni gerekiyor. Karnem sayfasından çıkış yapıp tekrar giriş yap.' : 'Lichess şu an cevap vermedi. Biraz sonra tekrar dene.';
+    }
+  };
+  if ($('macStudy')) $('macStudy').onclick = () => run($('macStudy'), addToNotebook, 'Defterine eklendi.');
+  if ($('macAi')) $('macAi').onclick = () => run($('macAi'), playFromCritical, 'Oyun hazır, bilgisayar seviye 3.');
+}
+async function lichessForm(url, data) {
+  const r = await fetch(url, { method: 'POST', headers: auth(), body: new URLSearchParams(data) });
+  if (r.status === 401 || r.status === 403) throw new Error('izin');
+  if (!r.ok) throw new Error(`hata ${r.status}`);
+  return r.json().catch(() => ({}));
+}
+// The child's private "Puhu Defterim" study; a full (64 chapters) or deleted study is replaced once.
+async function addToNotebook() {
+  const key = 'defter:' + S.me, pgn = reviewPgn(R.g, R);
+  const chapter = `${new Date(R.g.createdAt).toLocaleDateString('tr-TR')} ${oppName(R.g)}`.slice(0, 100);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let id = store.get(key, null);
+    if (!id) {
+      id = (await lichessForm('https://lichess.org/api/study', { name: 'Puhu Defterim', visibility: 'private', computer: 'everyone', explorer: 'everyone', cloneable: 'nobody', shareable: 'owner', chat: 'nobody' })).id;
+      if (!id) throw new Error('hata');
+      store.set(key, id);
+    }
+    try { await lichessForm(`https://lichess.org/api/study/${id}/import-pgn`, { pgn, name: chapter, orientation: colorOf(R.g) }); return `https://lichess.org/study/${id}`; }
+    catch (e) { if (e.message === 'izin') throw e; localStorage.removeItem(key); }
+  }
+  throw new Error('hata');
+}
+// Unrated game against Lichess AI (level 3, 10+5) from the position before the critical move.
+async function playFromCritical() {
+  const ply = R.truth ?? R.guess;
+  const r = await lichessForm('https://lichess.org/api/challenge/ai', { level: 3, 'clock.limit': 600, 'clock.increment': 5, color: colorOf(R.g), fen: positions(R.g)[ply].fen });
+  if (!r.id) throw new Error('hata');
+  return `https://lichess.org/${r.id}`;
+}
+
 // ---------- Puhu'ya sor ----------
 const sqList = a => a.length > 1 ? `${a.slice(0, -1).join(', ')} ve ${a.at(-1)} karelerindeki taşların` : `${a[0]} karesindeki taşın`;
 function ask(q) {
@@ -1264,6 +1518,12 @@ async function renderVeli() {
         <table><tr><th>Bölüm</th><th class="n">Açılış</th><th class="n">Bitirilen görev</th></tr>
           ${Object.entries(MODES).map(([k, n]) => { const c = store.get('modSayac', {})[k] || { acilis: 0, bitis: 0 }; return `<tr><td>${n}</td><td class="n">${c.acilis}</td><td class="n">${c.bitis}</td></tr>`; }).join('')}
         </table></section>
+      ${(() => {
+        const revs = Object.values(reviewed()).sort((a, b) => b.t - a.t), hit = k => revs.filter(r => r.puan === k).length;
+        return `<section class="sheet"><h2>Maç sonrası sohbetler</h2>
+          <p class="sub">${revs.length ? `${revs.length} maç konuşuldu. Kendi en büyük hatasını tahmini: ${hit(2)} tam isabet, ${hit(1)} yakın, ${hit(0)} farklı yer.` : 'Henüz maç konuşulmadı. Yeni bir lichess maçından sonra Puhu ana sayfada davet eder.'}</p>
+          ${revs.length ? `<table><tr><th>Maç</th><th>Nasıldı</th><th>Tahmini</th><th>Kendi dersi</th></tr>${revs.slice(0, 6).map(r => `<tr><td>${new Date(r.gameAt || r.t).toLocaleDateString('tr-TR')}</td><td>${escHtml(r.his || '–')}</td><td>${['Farklı yer', 'Yakın', 'Tam isabet'][r.puan] ?? '–'}</td><td>${escHtml(r.ders)}</td></tr>`).join('')}</table>` : ''}</section>`;
+      })()}
       <section class="sheet"><h2>Son 10 oyun</h2><table><tr><th>Tarih</th><th>Hız</th><th>Rakip</th><th>Sonuç</th><th class="n">Süre</th><th></th></tr>${recent}</table></section>
     </div>`;
 }
@@ -1314,7 +1574,7 @@ async function startLogin() {
   sessionStorage.setItem('pkce', JSON.stringify({ verifier, state }));
   const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
   location.href = 'https://lichess.org/oauth?' + new URLSearchParams({
-    response_type: 'code', client_id: CLIENT_ID, redirect_uri: redirectUri(), code_challenge_method: 'S256', code_challenge: challenge, state, scope: 'puzzle:read',
+    response_type: 'code', client_id: CLIENT_ID, redirect_uri: redirectUri(), code_challenge_method: 'S256', code_challenge: challenge, state, scope: 'puzzle:read study:write challenge:write',
   });
 }
 async function finishLogin() {
@@ -1352,7 +1612,7 @@ $('logout').onclick = async () => {
 // stars and spaced-repetition cards stay.
 if (!store.get('masteryV2', false)) { try { localStorage.removeItem('mastery'); } catch {} store.set('masteryV2', true); }
 drawMe(); renderHome();
-window.koc = { S, T, H, P, Chess }; // read-only handle for e2e_test.mjs
+window.koc = { S, T, H, P, R, Chess }; // read-only handle for e2e_test.mjs
 const startAt = location.hash.slice(1);
 go(MODES[startAt] || startAt === 'karne' || startAt === 'veli' ? startAt : 'bugun');
 (async () => {
