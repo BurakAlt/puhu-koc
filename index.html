@@ -179,10 +179,35 @@
   .chart .l { fill: var(--ink-2); }
   .chart .v { fill: var(--ink); font-weight: 700; }
 
+  /* ---------- pictures: rank badges, Puhu poses, rank-up celebration ---------- */
+  .ladder .g img.badge { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .ladder li:not(.got):not(.now) .g img.badge { filter: grayscale(1); opacity: .45; }
+  .ladder li .g:has(img.badge) { background: transparent; border-color: transparent; }
+  .ladder li.now .g:has(img.badge) { box-shadow: 0 0 0 5px #FFE9A8; border-radius: 50%; }
+  .maccard-pose img, .rest-pose img { width: 84px; height: 84px; object-fit: contain; display: block; }
+  .maccard-pose:empty, .rest-pose:empty { display: none; }
+  .rest { margin: -8px 0 22px; background: var(--sheet); border: 2px dashed var(--line); border-radius: 18px; padding: 14px 18px; display: flex; gap: 14px; align-items: center; }
+  .rest[hidden] { display: none; }
+  .rest p { margin: 0; font-size: 17px; }
+  .celebrate { position: fixed; inset: 0; z-index: 20; background: rgba(29, 43, 79, .55); display: grid; place-items: center; padding: 16px; overflow: hidden; }
+  .celebrate[hidden] { display: none; }
+  .cel-card { position: relative; background: var(--sheet); border: 3px solid var(--ink); border-radius: 26px; padding: 24px 28px 28px; max-width: 420px; width: 100%; text-align: center; display: grid; gap: 10px; justify-items: center; }
+  .cel-card h2 { font-size: 32px; }
+  .cel-card p { margin: 0; font-size: 17px; }
+  .cel-art { position: relative; width: 220px; height: 200px; }
+  .cel-art .cel-pose { position: absolute; left: 0; top: 0; width: 170px; height: 170px; object-fit: contain; }
+  .cel-badge { position: absolute; right: 0; bottom: 0; width: 110px; height: 110px; display: grid; place-items: center; font-size: 72px; }
+  .cel-badge img { width: 100%; height: 100%; object-fit: contain; animation: pop .5s cubic-bezier(.2, 1.6, .4, 1) both; }
+  .confetti i { position: absolute; top: -12px; width: 10px; height: 14px; border-radius: 2px; animation: fall 2.4s linear both; }
+  @keyframes fall { to { transform: translateY(110vh) rotate(540deg); } }
+  @keyframes pop { from { transform: scale(.2); } to { transform: scale(1); } }
+  @media (prefers-reduced-motion: reduce) { .confetti { display: none; } .cel-badge img { animation: none; } }
+
   /* ---------- login ---------- */
   .login { min-height: 100vh; display: grid; place-content: center; justify-items: center; text-align: center; gap: 16px; padding: 24px 16px; }
   .login[hidden], body.locked .app { display: none; }
   .login-owl { width: 180px; }
+  .login-owl .pose-login { width: 100%; display: block; }
   .login p { max-width: 38ch; margin: 0; font-size: 18px; }
   .login .login-note { font-size: 14px; color: var(--ink-2); }
 
@@ -212,8 +237,17 @@
 </style>
 </head>
 <body>
+<div class="celebrate" id="celebrate" hidden role="dialog" aria-modal="true" aria-labelledby="celTitle">
+  <div class="confetti" id="confetti" aria-hidden="true"></div>
+  <div class="cel-card">
+    <div class="cel-art"><span id="celPose"></span><span class="cel-badge" id="celBadge"></span></div>
+    <h2 id="celTitle"></h2>
+    <p id="celText"></p>
+    <button class="btn primary big" id="celClose">Devam</button>
+  </div>
+</div>
 <section class="login" id="login" hidden>
-  <div class="login-owl" data-puhu></div>
+  <div class="login-owl" id="loginOwl" data-puhu></div>
   <h1>Puhu Koç</h1>
   <p>Lichess hesabınla giriş yap. Puhu oyunlarına bakıp sana özel antrenman hazırlasın.</p>
   <button class="btn primary big" id="loginBtn">Lichess ile giriş yap</button>
@@ -250,12 +284,17 @@
         <div class="bubble" id="homeSay">Oyunlarına bakıyorum…</div>
       </div>
       <div class="maccard" id="macCard" hidden>
+        <span class="maccard-pose" id="macCardPose"></span>
         <p id="macCardText"></p>
         <button class="btn primary" id="macCardBtn">Son maçına bakalım</button>
       </div>
       <div class="today">
         <h2>Bugünkü antrenman</h2>
         <ol class="steps" id="steps"></ol>
+        <div class="rest" id="restCard" hidden>
+          <span class="rest-pose" id="restPose"></span>
+          <p><b>Bugünlük harika çalıştın.</b> Beynin doydu. Şimdi evde biriyle tahtada bir oyun oynamaya ne dersin? Yarın Puhu yeni pozisyonlarla burada.</p>
+        </div>
         <button class="btn primary big" id="cta">Antrenmana başla</button>
       </div>
       <div class="ladder">
@@ -730,7 +769,28 @@ const totalStars = () => Object.values(starsAll()).reduce((a, b) => a + b, 0);
 const dayProgress = () => store.get('gun', {})[today()] || {};
 // Stars (P2): 2 for a first-try answer without help, 1 with help, 0 after "show answer".
 const starsFor = (clean, shown) => shown ? 0 : clean ? 2 : 1;
-function addStar(n = 1) { if (!n) return; const s = starsAll(); s[today()] = (s[today()] || 0) + n; store.set('stars', s); drawMe(); }
+const rankIndex = t => RANKS.filter(x => t >= x[2]).length - 1;
+function addStar(n = 1) {
+  if (!n) return;
+  const before = rankIndex(totalStars());
+  const s = starsAll(); s[today()] = (s[today()] || 0) + n; store.set('stars', s); drawMe();
+  const after = rankIndex(totalStars());
+  if (after > before) setTimeout(() => celebrate(after), 900);         // let Puhu finish the "correct" line first
+}
+// Rank badges and Puhu poses are images in img/; if one is missing the page falls back to the chess glyph / no picture.
+const RANK_SLUG = ['piyon', 'at', 'fil', 'kale', 'vezir', 'sah'];
+const badgeHtml = i => `<img class="badge" src="img/rozet-${RANK_SLUG[i]}.png" alt="" onerror="this.replaceWith(document.createTextNode('${RANKS[i][0]}'))">`;
+const poseHtml = (name, cls = 'pose') => `<img class="${cls}" src="img/puhu-${name}.png" alt="" onerror="this.remove()">`;
+function celebrate(i) {
+  $('celBadge').innerHTML = badgeHtml(i);
+  $('celPose').innerHTML = poseHtml('kutlama', 'cel-pose');
+  $('celTitle').textContent = `${RANKS[i][1]} rütbesi!`;
+  $('celText').textContent = RANKS[i + 1] ? `Tebrikler! Sıradaki rütbe ${RANKS[i + 1][1]}: ${RANKS[i + 1][2] - totalStars()} yıldız kaldı.` : 'Tebrikler! En yüksek rütbeye ulaştın: Şah!';
+  $('confetti').innerHTML = Array.from({ length: 36 }, (_, k) => `<i style="left:${(k * 37) % 100}%;animation-delay:${(k % 9) * 0.12}s;background:${['var(--sun)', 'var(--plum)', 'var(--ok)'][k % 3]}"></i>`).join('');
+  $('celebrate').hidden = false;
+  $('celClose').focus();
+  speak(`Tebrikler! Artık ${RANKS[i][1]} rütbesindesin!`, $('coachOwl'));
+}
 // Per-mode open/finish counters (P4 add-on): shows whether a mode is started but abandoned.
 function countMode(mode, field) { const c = store.get('modSayac', {}); c[mode] = { acilis: 0, bitis: 0, ...c[mode] }; c[mode][field]++; store.set('modSayac', c); }
 function bump(step) {
@@ -762,7 +822,11 @@ function renderHome() {
   $('cta').textContent = next ? (started ? `Devam et: ${STEPS[next][0]}` : 'Antrenmana başla') : 'Bugünlük bitti! Serbest bulmaca çöz';
   $('cta').onclick = () => go(next || 'bulmaca');
   const t = totalStars(), cur = RANKS.filter(x => t >= x[2]).length - 1;
-  $('ladder').innerHTML = RANKS.map(([g, n], i) => `<li class="${i < cur ? 'got' : i === cur ? 'now' : ''}"><span class="g" aria-hidden="true">${g}</span>${n}</li>`).join('');
+  $('ladder').innerHTML = RANKS.map(([g, n], i) => `<li class="${i < cur ? 'got' : i === cur ? 'now' : ''}"><span class="g" aria-hidden="true">${badgeHtml(i)}</span>${n}</li>`).join('');
+  const allDone = Object.keys(STEPS).every(k => (p[k] || 0) >= GOALS[k]);
+  $('restCard').hidden = !allDone;                                      // healthy stop: the plan has an end
+  $('cta').classList.toggle('primary', !allDone);
+  if (allDone) $('cta').textContent = 'Yine de bulmaca çöz';
   $('ladderNote').textContent = RANKS[cur + 1] ? `${RANKS[cur + 1][1]} rütbesine ${RANKS[cur + 1][2] - t} yıldız kaldı. Yardımsız doğru cevap 2 yıldız, ipucuyla doğru cevap 1 yıldız.` : 'En yüksek rütbedesin: Şah!';
   const waiting = S.loaded ? pendingReviews(S.games, reviewed(), Date.now()).length : 0;
   $('macCard').hidden = !waiting;
@@ -1599,6 +1663,8 @@ async function whoAmI() {
 }
 function showLogin(msg) {
   document.body.classList.add('locked'); $('login').hidden = false;
+  if (!$('loginOwl').querySelector('img'))                            // waving Puhu picture; the SVG owl stays if it is missing
+    $('loginOwl').insertAdjacentHTML('afterbegin', `<img class="pose-login" src="img/puhu-selam.png" alt="" onload="this.nextElementSibling.style.display='none'" onerror="this.remove()">`);
   if (msg) $('loginMsg').textContent = msg;
 }
 $('loginBtn').onclick = () => startLogin();
@@ -1611,6 +1677,10 @@ $('logout').onclick = async () => {
 // P2: mastery before the clean-signal fix was polluted (hints counted as first-try, wrong kind credited). Reset once;
 // stars and spaced-repetition cards stay.
 if (!store.get('masteryV2', false)) { try { localStorage.removeItem('mastery'); } catch {} store.set('masteryV2', true); }
+$('macCardPose').innerHTML = poseHtml('defter');
+$('restPose').innerHTML = poseHtml('uyku');
+$('celClose').onclick = () => { $('celebrate').hidden = true; };
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('celebrate').hidden) $('celebrate').hidden = true; });
 drawMe(); renderHome();
 window.koc = { S, T, H, P, R, Chess }; // read-only handle for e2e_test.mjs
 const startAt = location.hash.slice(1);

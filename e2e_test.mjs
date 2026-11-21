@@ -118,6 +118,20 @@ const steps = await page.$$eval('#steps li span', s => s.map(x => x.textContent)
 console.log('steps:', steps, 'stars:', await stars());
 assert.ok(steps[1].startsWith('1'), 'hunt step counted');
 
+// 5. Rank-up celebration: at 24 stars a clean stalemate-trap solve (+2) reaches the Knight rank
+await page.evaluate(() => { const d = new Date().toLocaleDateString('sv-SE'); localStorage.setItem('stars', JSON.stringify({ [d]: 24 })); });
+await page.click('[data-go="bulmaca"]');
+for (let i = 0; i < 3 && !(await page.evaluate(() => koc.P.theme === 'patTrap' && !!koc.P.fen && koc.P.step === 0)); i++) {
+  await page.click('[data-th="patTrap"]'); await new Promise(r => setTimeout(r, 400));
+}
+const mate2 = await page.evaluate(() => { const c = new koc.Chess(koc.P.fen); for (const m of c.moves({ verbose: true })) { c.move(m); if (c.isCheckmate()) return m.from + m.to; c.undo(); } });
+await move(mate2);
+await page.waitForFunction(() => !document.getElementById('celebrate').hidden, { timeout: 5000 });
+assert.match(await page.$eval('#celTitle', e => e.textContent), /At rütbesi/);
+await page.screenshot({ path: new URL('./kutlama_e2e.png', import.meta.url).pathname.replace(/^\//, '') });
+await page.click('#celClose');
+assert.equal(await page.$eval('#celebrate', e => e.hidden), true);
+
 assert.deepEqual(errors, [], 'no page errors');
 await browser.close();
 console.log('OK: e2e passes');
