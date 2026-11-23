@@ -783,7 +783,8 @@ function speak(html, owl) {
   const svg = owl.querySelector('.puhu');
   svg.classList.add('talking');
   const stop = () => svg.classList.remove('talking');
-  if (!tts || !('speechSynthesis' in window)) { setTimeout(stop, 1400); return; }
+  // automated test browsers stay silent: Windows speech bypasses Chrome's --mute-audio
+  if (!tts || navigator.webdriver || !('speechSynthesis' in window)) { setTimeout(stop, 1400); return; }
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(sayable(html).replace(/[^\p{L}\p{N}\s.,!?:]/gu, ' '));
   u.lang = 'tr-TR'; u.onend = u.onerror = stop;
@@ -1507,7 +1508,8 @@ function ask(q) {
   q = q.trim();
   if (!q) return;
   if (q === 'tehlike') {
-    if (S.mode === 'avci' && !H.done) return coachSay('Bunu bulmak senin görevin! Takılırsan İpucu düğmesine bas.', 'think');
+    const open = S.mode === 'avci' ? !H.done : S.mode === 'hata' ? !T.done : S.mode === 'bulmaca' && P.step < (P.sol?.length ?? 1);
+    if (open) return coachSay('Bunu bulmak senin görevin! Takılırsan İpucu düğmesine bas.', 'think');
     const r = dangerReport(B.fen()), parts = [];
     if (r.inCheck) parts.push('Şahın tehdit altında! Önce onu kurtar.');
     if (r.mateThreat) parts.push(`Dikkat! Rakip ${r.mateThreat} karesine gelirse MAT yapar. Önce bunu engelle.`);
