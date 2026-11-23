@@ -423,16 +423,28 @@ function playUci(chess, uci) {
   try { return chess.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || 'q' }); } catch { return null; }
 }
 
-// Pieces of `color` (king excluded) the other side can win: attacked and undefended, or attacked by something cheaper.
+// Counting exchange (SEE): what the attacker nets on a square holding `v`, cheapest capturer first on both sides.
+// att/def: piece values sorted low to high; a king (100) may capture only when the other side has nobody left.
+function swapGain(v, att, def) {
+  const side = [att.slice(), def.slice()], g = [v];
+  if (side[0][0] === 100 && side[1].length) return 0;
+  let onSq = side[0].shift(), s = 1;
+  while (side[s].length && !(side[s][0] === 100 && side[1 - s].length)) {
+    g.push(onSq - g[g.length - 1]); onSq = side[s].shift(); s = 1 - s;
+  }
+  for (let i = g.length - 1; i > 0; i--) g[i - 1] = -Math.max(-g[i - 1], g[i]);
+  return g[0];
+}
+
+// Pieces of `color` (king excluded) the other side wins material on by a plain exchange.
 // ponytail: ignores pins and x-rays; good enough to explain kid-level blunders.
 function hangingPieces(fen, color) {
   const c = new Chess(fen), opp = color === 'w' ? 'b' : 'w', out = [];
+  const vals = (sq, col) => c.attackers(sq, col).map(s => VAL[c.get(s).type]).sort((a, b) => a - b);
   for (const row of c.board()) for (const p of row) {
     if (!p || p.color !== color || p.type === 'k') continue;
-    const att = c.attackers(p.square, opp);
-    if (!att.length) continue;
-    const cheapest = Math.min(...att.map(s => VAL[c.get(s).type]));
-    if (!c.attackers(p.square, color).length || cheapest < VAL[p.type]) out.push({ sq: p.square, type: p.type });
+    const att = vals(p.square, opp);
+    if (att.length && swapGain(VAL[p.type], att, vals(p.square, color)) > 0) out.push({ sq: p.square, type: p.type });
   }
   return out;
 }
@@ -453,12 +465,12 @@ function explain(fen0, played, best, comment = '') {
   }
   if (best) { const c2 = new Chess(fen0), b = playUci(c2, best); if (b && c2.isCheckmate()) return res('matKacti'); }
 
-  const after = hangingPieces(c1.fen(), me);
-  const moved = after.find(h => h.sq === mv.to);
-  if (moved && !(mv.captured && VAL[mv.captured] >= VAL[mv.piece])) return res('asili', { sq: mv.to, t: mv.piece });
+  // Hanging pieces, most valuable first; a lone pawn only counts when the fork and free-piece checks find nothing.
   const before = new Set(hangingPieces(fen0, me).map(h => h.sq));
-  const other = after.find(h => h.sq !== mv.to);
-  if (other) return res(before.has(other.sq) ? 'tehdit' : 'korumasiz', { sq: other.sq, t: other.type });
+  const hung = hangingPieces(c1.fen(), me).sort((a, b) => VAL[b.type] - VAL[a.type]).map(h => h.sq !== mv.to
+    ? res(before.has(h.sq) ? 'tehdit' : 'korumasiz', { sq: h.sq, t: h.type })
+    : !(mv.captured && VAL[mv.captured] >= VAL[mv.piece]) && res('asili', { sq: mv.to, t: mv.piece })).filter(Boolean);
+  if (hung[0] && hung[0].t !== 'p') return hung[0];
 
   for (const m of c1.moves({ verbose: true })) {
     c1.move(m);
@@ -467,13 +479,15 @@ function explain(fen0, played, best, comment = '') {
       if (!p || p.color !== me || !c1.attackers(p.square, opp).includes(m.to)) continue;
       if (p.type === 'k' || VAL[p.type] > VAL[m.piece] || !c1.attackers(p.square, me).length) hits++;
     }
+    const safe = hits >= 2 && !hangingPieces(c1.fen(), opp).some(h => h.sq === m.to);   // forker taken for free: no fork
     c1.undo();
-    if (hits >= 2) return res('catal', { sq: m.to });
+    if (safe) return res('catal', { sq: m.to });
   }
   if (best) {
     const c2 = new Chess(fen0), b = playUci(c2, best);
     if (b?.captured && hangingPieces(fen0, opp).some(h => h.sq === b.to)) return res('bedava', { sq: b.to, t: b.captured });
   }
+  if (hung[0]) return hung[0];
   if (/checkmate is now unavoidable/i.test(comment)) return res('matIzin');
   if (/forced checkmate/i.test(comment)) return res('matKacti');
   return res('diger');
@@ -1004,7 +1018,7 @@ function show(user, games) {
 }
 
 // ---------- P3: engine-free outcome stats, cached per game, computed in small slices so the page never freezes ----------
-const RELEASES = [['Paket 1: ölçüm düzeltmeleri', '2026-11-21'], ['Maç sonrası sohbet', '2026-11-21'], ['Paket 1b: temizlik', '2026-11-23']];   // trend is read against these dates
+const RELEASES = [['Paket 1: ölçüm düzeltmeleri', '2026-11-21'], ['Maç sonrası sohbet', '2026-11-21'], ['Paket 1b: temizlik', '2026-11-23'], ['Paket 2', '2026-11-23']];   // trend is read against these dates
 const statsKey = () => 'stats:' + S.me;
 let statsRun = 0;
 async function startStats() {

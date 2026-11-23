@@ -35,6 +35,13 @@ assert.equal(A.explain('4k3/8/8/8/8/8/8/R3K3 w - - 0 1', 'e1d2', 'a1a2', 'Lost f
 // hanging pieces of a color (king never counts)
 assert.deepEqual(A.hangingPieces('4k3/8/8/8/8/2b5/8/R6K w - - 0 1', 'w').map(h => h.sq), ['a1']);
 assert.deepEqual(A.hangingPieces('4k3/8/8/8/8/2b5/1P6/R1K5 w - - 0 1', 'w'), []);
+// P5: counting exchange (SEE), value order, forker safety
+assert.ok(A.hangingPieces('7k/8/4p3/3r4/1N3N2/8/8/7K w - - 0 1', 'b').some(h => h.sq === 'd5'), 'iki atın saldırdığı, tek piyonun koruduğu kale asılı');
+assert.ok(A.hangingPieces('7k/8/8/3n4/1N6/2N1n3/8/7K b - - 0 1', 'b').some(h => h.sq === 'd5'), 'two knights vs one knight defender wins the knight');
+assert.ok(A.hangingPieces('8/8/4k3/3b4/1N6/2N5/8/7K b - - 0 1', 'b').some(h => h.sq === 'd5'), 'king cannot recapture while another attacker remains');
+assert.deepEqual(A.hangingPieces('8/8/4k3/3b4/8/2N5/8/7K b - - 0 1', 'b'), [], 'king may recapture the last attacker');
+assert.equal(A.explain('4k3/2b5/8/8/q7/8/1N5P/2K5 w - - 0 1', 'c1b1', 'b2a4').kind, 'bedava', 'vezir bedava + piyon asılı');
+assert.equal(A.explain('4k3/8/8/8/1n6/8/7R/1Q2K3 w - - 0 1', 'b1a1', 'b1b4').kind, 'bedava', 'a forker taken for free is no fork');
 
 // Leitner (P11): 1, 3, 7, 16, 35 days; wrong -> box 1, back in 10 minutes
 const now = 1_000_000_000_000, day = 864e5;
