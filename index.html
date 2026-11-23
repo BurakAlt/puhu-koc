@@ -390,11 +390,13 @@ import { Chessground } from 'https://cdn.jsdelivr.net/npm/chessground@9.1.1/+esm
 const VAL = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 100 };
 // [name, "your X" accusative, "their X"]
 const PN = { p: ['piyon', 'piyonunu', 'piyonu'], n: ['at', 'atını', 'atı'], b: ['fil', 'filini', 'fili'], r: ['kale', 'kaleni', 'kalesi'], q: ['vezir', 'vezirini', 'veziri'], k: ['şah', 'şahını', 'şahı'] };
+// The child's one check sentence (P6). Every place that states the routine reads this; change it here only.
+const KONTROL = 'Hamleni bulunca: Rakip ne yapar? Şah, alma, tehdit.';
 const trSan = s => (s || '').replace(/[NBRQK]/g, c => ({ N: 'A', B: 'F', R: 'K', Q: 'V', K: 'Ş' })[c]);
 const KINDS = {
   pat: { ad: 'Kazanırken pat yaptım', tema: 'patTrap', kural: 'Rakibin sadece şahı kaldıysa ona bir kaçış karesi bırak.',
     yaz: () => 'PAT oldu! Rakip şah hiçbir kareye gidemiyordu ama şah da çekmemiştin. Kazandığın oyun berabere bitti.' },
-  matIzin: { ad: 'Mata izin verdim', tema: 'mateIn1', kural: 'Hamleden önce kendi şahına bak: Rakip bana şah çekebilir mi?',
+  matIzin: { ad: 'Mata izin verdim', tema: 'mateIn1', kural: KONTROL,
     yaz: x => x.sq ? `Bu hamleden sonra rakip ${x.sq} karesine gelip MAT yapabiliyordu. Kendi şahının etrafına bakmadın.` : 'Bu hamleden sonra rakibin zorla mat yolu açıldı. Kendi şahının etrafına bakmadın.' },
   matKacti: { ad: 'Matı kaçırdım', tema: 'mateIn2', kural: 'Her hamlede önce şunu sor: Şah çekebilir miyim?',
     yaz: x => `Burada MAT vardı! ${trSan(x.bestSan)} ile oyunu bitirebilirdin.` },
@@ -571,7 +573,7 @@ const SOZLUK = [
   [['değer', 'puan', 'takas'], 'Taş değerleri: piyon 1, at 3, fil 3, kale 5, vezir 9. Takasta daha değerli taşı almaya çalış.'],
   [['açılış', 'başla'], 'Açılışta üç kural: Merkezi piyonlarla tut, atları ve filleri çabuk çıkar, rok yap. Vezirini çok erken çıkarma.'],
   [['asılı', 'korumasız', 'bedava'], 'Asılı taş: Saldırı altında ve onu koruyan hiçbir taş yok. Rakibin asılı taşını al, kendi asılı taşını kurtar.'],
-  [['tehdit', 'nasıl düşün', 'şat', 'hata'], 'Her hamleden önce ŞAT: Şah çekebilir miyim? Alabileceğim taş var mı? Rakip neyi Tehdit ediyor?'],
+  [['tehdit', 'nasıl düşün', 'şat', 'hata'], `ŞAT: Önce rakibe bak: Rakip neyi Tehdit ediyor? Sonra kendine sor: Şah çekebilir miyim? Alabileceğim taş var mı? ${KONTROL}`],
   [['oyun sonu', 'son oyun'], 'Oyun sonunda şahını oyuna sok, piyonlarını ilerlet. Rakibin sadece şahı kaldıysa pat yapmamaya dikkat et.'],
 ];
 const SOZLUK_KONULAR = 'pat, mat, çatal, açmaz, şiş, rok, geçerken alma, terfi, taş değerleri, açılış, asılı taş, oyun sonu';
@@ -757,6 +759,24 @@ function monthBuckets(list, now = Date.now(), n = 3) {
     (kinds[m.ex.kind] ??= Array(n).fill(0))[i]++;
   }
   return { months, kinds, total: months.reduce((s, x) => s + x.items.length, 0) };
+}
+// Think-time note for the home insight: states the fact, no diagnosis (P6).
+function thinkNote(t) {
+  if (t.n < 5) return '';
+  const fact = `Hata yaptığın hamlelerde genelde <b>${Math.round(t.bl)} saniye</b> düşünmüşsün, diğerlerinde ${Math.round(t.ok)} saniye.`;
+  if (t.bl > t.ok * 1.25) return `${fact} ${KONTROL}`;
+  if (t.bl < t.ok * 0.75) return `${fact} Hamleni oynamadan önce bir an rakibin taşlarına bak.`;
+  return '';
+}
+// Wrong answer told from the opponent's side (P12): '<move> ile rakip ... yapabiliyor. Bir de rakip gözüyle bak.'
+function rakipGozu(san, ex) {
+  const end = 'Bir de rakip gözüyle bak.', m = `<b>${san}</b> ile`, piece = ex.t && PN[ex.t][1];
+  const s = ex.kind === 'pat' ? `${m} ${ex.text}`
+    : ex.kind === 'matIzin' ? (ex.sq ? `${m} rakip ${ex.sq} karesine gelip mat yapabiliyor.` : `${m} rakip zorla mat yapabiliyor.`)
+    : ex.kind === 'catal' ? `${m} rakip ${ex.sq} karesine gelip iki taşına birden saldırabiliyor.`
+    : ['asili', 'tehdit', 'korumasiz'].includes(ex.kind) ? `${m} rakip ${ex.sq} karesindeki ${piece} alabiliyor.`
+    : '';
+  return s ? `${s} ${end}` : end;
 }
 // AKIL-BITIR
 
@@ -1099,8 +1119,8 @@ async function load() {
 function insight() {
   const top = Object.entries(profile()).filter(([k]) => k !== 'diger').sort((a, b) => b[1] - a[1])[0];
   const t = thinkStats(), parts = [];
-  if (top) parts.push(`Oyunlarındaki ${S.mistakes.length} büyük hatayı inceledim. En sık olanı: <b>${KINDS[top[0]].ad.toLocaleLowerCase('tr')}</b> (${top[1]} kez).`);
-  if (t.n >= 5 && t.bl < t.ok * 0.75) parts.push(`Hata yaptığın hamlelerde genelde <b>${Math.round(t.bl)} saniye</b> düşünmüşsün, diğerlerinde ${Math.round(t.ok)} saniye. Acele edince hata geliyor!`);
+  if (top) parts.push(`Oyunlarındaki ${S.mistakes.length} kaçan fırsatı inceledim. En sık olanı: <b>${KINDS[top[0]].ad.toLocaleLowerCase('tr')}</b> (${top[1]} kez).`);
+  const note = thinkNote(t); if (note) parts.push(note);
   parts.push('Bugünkü antrenmanı senin hatalarına göre hazırladım.');
   const last = store.get('sonDers:' + S.me, null);
   if (last?.ders) parts.push(`Geçen maçtan dersin: <b>“${escHtml(last.ders)}”</b>`);
@@ -1182,7 +1202,7 @@ function nextMistake() {
     ? `Bu pozisyonu hatırlıyor musun? Burada <b>${trSan(T.it.playedSan)}</b> oynadın ve oyun PAT oldu. Bu sefer pat yapmadan devam et!`
     : !T.it.best
       ? `Bu pozisyonu hatırlıyor musun? Burada <b>${trSan(T.it.playedSan)}</b> oynadın ve rakip tek hamlede MAT yapabildi. Bu sefer şahını koruyan bir hamle bul!`
-      : `Bu pozisyonu hatırlıyor musun? Burada <b>${trSan(T.it.playedSan)}</b> oynadın ve bu büyük bir hataydı. Daha iyi hamleyi bul!`, 'think');
+      : `Bu pozisyonu hatırlıyor musun? Burada <b>${trSan(T.it.playedSan)}</b> oynadın ama burada daha iyi bir hamle vardı. Onu bul!`, 'think');
 }
 function hataRecord(ok) {
   if (T.recorded) return; T.recorded = true;
@@ -1203,12 +1223,12 @@ function hataMove(uci) {
   if (good) {
     const clean = T.wrong === 0 && !T.hinted;
     T.done = true; lock(); hataRecord(clean); addStar(starsFor(clean, false)); bump('hata');
-    coachSay(`<b>${trSan(m.san)}</b>, aferin!${B.isCheckmate() ? ' Hem de MAT!' : ''} Peki oyunda neden hata yapmıştın? ${T.it.ex.text}`, 'happy', T.it.ex.rule);
+    coachSay(`<b>${trSan(m.san)}</b>! Dikkatle bakıp buldun.${B.isCheckmate() ? ' Hem de MAT!' : ''} Peki oyunda neden kaçırmıştın? ${T.it.ex.text}`, 'happy', T.it.ex.rule);
     return;
   }
   T.wrong++; hataRecord(false); lock();
   const ex = explain(fen, uci, null);
-  coachSay(ex.kind !== 'diger' ? `<b>${trSan(m.san)}</b> olmaz. ${ex.text} Tekrar dene!` : `<b>${trSan(m.san)}</b> değil. Tekrar dene!`, 'sad', ex.kind !== 'diger' ? ex.rule : null);
+  coachSay(`${rakipGozu(trSan(m.san), ex)} Tekrar dene!`, 'think');
   setTimeout(() => setPos(T.it.fen, { last: T.it.last }), 900);
 }
 function hataHint() {
@@ -1266,7 +1286,7 @@ function huntClick(sq) {
     H.wrong++;
     if (H.wrong >= 2) { huntShow(); return; }                         // two misses: lock and show (P2c)
     cg.setShapes([{ orig: sq, brush: 'red' }]);
-    return coachSay(it.type === 'tehlike' ? 'Orada değil. Rakip taşlarının hangi karelere baktığını tek tek kontrol et.' : 'Orada değil. Hangi rakip taşını hiçbir rakip taşı korumuyor?', 'sad');
+    return coachSay(it.type === 'tehlike' ? 'Orada değil. Rakip taşlarının hangi karelere baktığını tek tek kontrol et.' : 'Orada değil. Hangi rakip taşını hiçbir rakip taşı korumuyor?', 'think');
   }
   const clean = H.wrong === 0 && !H.hinted;
   H.done = true; addStar(H.wrong ? 0 : starsFor(clean, false)); bump('avci'); masteryAdd(it.type === 'tehlike' ? 'tehdit' : 'bedava', clean);
@@ -1308,7 +1328,7 @@ function puzzleSolved() {
   lock(); addStar(starsFor(clean, P.shown)); bump('bulmaca');
   const h = store.get('pzHist', []); h.push(clean); store.set('pzHist', h.slice(-20));
   if (P.kind) masteryAdd(P.kind, clean);
-  coachSay(clean ? 'Çözdün, hem de ilk denemede ve ipucusuz!' : 'Çözdün! Bir sonrakini ipucusuz deneyelim.', 'happy');
+  coachSay(clean ? 'Çözdün, hem de ilk denemede ve ipucusuz!' : 'Çözdün! Denemeye devam ettin ve buldun.', 'happy', KINDS[P.kind]?.kural || null);
 }
 async function nextPuzzle() {
   onSquare = null; nextFn = nextPuzzle;
@@ -1345,14 +1365,14 @@ function puzzleMove(uci) {
   if (uci.slice(0, 4) !== want.slice(0, 4) && !B.isCheckmate()) {
     P.wrong++;
     const ex = explain(fen, uci, null);
-    coachSay(ex.kind !== 'diger' ? `<b>${trSan(m.san)}</b> olmaz. ${ex.text}` : `<b>${trSan(m.san)}</b> değil, tekrar dene.`, 'sad', ex.kind !== 'diger' ? ex.rule : null);
+    coachSay(`${rakipGozu(trSan(m.san), ex)} Tekrar dene!`, 'think');
     B.undo(); lock();
     setTimeout(() => cg.set({ fen: B.fen(), lastMove: P.last, check: B.inCheck(), movable: { color: orient, dests: dests(B) } }), 700);
     return;
   }
   sync(m); P.step++;
   if (P.step >= P.sol.length || B.isCheckmate()) { P.step = P.sol.length; return puzzleSolved(); }
-  coachSay('Doğru! Devam et.', 'happy');
+  coachSay('Doğru, iyi baktın! Devam et.', 'happy');
   setTimeout(() => {
     const r = playUci(B, P.sol[P.step]); P.step++; P.last = [r.from, r.to];
     cg.set({ fen: B.fen(), lastMove: P.last, turnColor: orient, check: B.inCheck(), movable: { color: orient, dests: dests(B) } });
@@ -1364,8 +1384,8 @@ function patMove(uci) {
   sync(m);
   if (B.isCheckmate()) { P.step = 1; return puzzleSolved(); }
   P.wrong++; lock();
-  if (B.isStalemate()) coachSay(`<b>${trSan(m.san)}</b> ile ${KINDS.pat.yaz()}`, 'sad', KINDS.pat.kural);
-  else coachSay(`<b>${trSan(m.san)}</b> mat değil. Tekrar dene!`, 'sad');
+  if (B.isStalemate()) coachSay(`<b>${trSan(m.san)}</b> ile ${KINDS.pat.yaz()} Tekrar dene!`, 'think');
+  else coachSay(`<b>${trSan(m.san)}</b> mat değil. Bir de rakip gözüyle bak: şah nereye kaçabiliyor?`, 'think');
   setTimeout(() => setPos(P.fen), 1000);
 }
 
@@ -1456,7 +1476,7 @@ async function revealTruth() {
 }
 function askLesson() {
   R.step = 4;
-  const ideas = [...new Set([R.m?.ex.rule, 'Hamleden önce rakibin ne istediğine bakacağım.', 'Taşımı koymadan önce o kareyi kim görüyor diye bakacağım.', 'Önce şah çekebilir miyim diye kontrol edeceğim.'].filter(Boolean))];
+  const ideas = [...new Set([R.m?.ex.rule, KONTROL, 'Taşımı koymadan önce o kareyi kim görüyor diye bakacağım.', 'Önce şah çekebilir miyim diye kontrol edeceğim.'].filter(Boolean))];
   coachSay('Bu maçtan tek bir ders seç ya da kendi cümleni yaz. Bir sonraki maçından önce sana hatırlatacağım.', 'think');
   $('macPanel').innerHTML = `
     <div class="chips">${ideas.map((t, i) => `<button class="chip" type="button" data-idea="${i}">${escHtml(t)}</button>`).join('')}</div>
@@ -1688,7 +1708,7 @@ function renderKarne() {
       <div><dt>Toplam oyun</dt><dd>${S.user.count?.all ?? '–'}</dd></div>
     </dl></section>
     <section id="mapBox"></section>
-    <section><h2>Hata türlerim</h2><p class="sub">Son ${S.games.length} oyundaki ${S.mistakes.length} büyük hata, Puhu’nun bulduğu nedene göre.</p>
+    <section><h2>Hata türlerim</h2><p class="sub">Son ${S.games.length} oyundaki ${S.mistakes.length} kaçan fırsat, Puhu’nun bulduğu nedene göre.</p>
       <ul class="bars">${kinds.map(([k, n]) => `<li><span>${KINDS[k].ad}</span><span class="track"><span class="fill" style="display:block;width:${n / max * 100}%" title="${KINDS[k].ad}: ${n} hata"></span></span><span>${n}</span></li>`).join('')}</ul></section>
     ${trendHtml()}
     ${t.n >= 3 ? `<section><h2>Düşünme süresi</h2><p class="sub">Hamle başına düşünme süresinin ortancası, saniye.</p>
@@ -1706,7 +1726,7 @@ const beaten = m => isBeaten(store.get('srs', {})[m.key]);
 function renderMap() {
   const box = $('mapBox'); if (!box) return;
   const b = monthBuckets(S.mistakes), f = S.mapKind, won = b.months.flatMap(x => x.items).filter(beaten).length;
-  if (!b.total) { box.innerHTML = '<h2>Son 3 ayın hataları</h2><p class="sub">Son 3 ayda analizli büyük hata yok. Harika!</p>'; return; }
+  if (!b.total) { box.innerHTML = '<h2>Son 3 ayın hataları</h2><p class="sub">Son 3 ayda analizli kaçan fırsat yok. Harika!</p>'; return; }
   const kinds = Object.entries(b.kinds).sort((x, y) => y[1].reduce((a, c) => a + c) - x[1].reduce((a, c) => a + c));
   // per analysed game, last two months: raw counts follow how many games the engine has looked at, not skill
   const played = b.months.map(mo => S.games.filter(g => g.createdAt >= mo.start && g.createdAt < mo.end && g.analysis).length);
@@ -1716,7 +1736,7 @@ function renderMap() {
     return z < a * 0.8 ? ['down', 'azalıyor'] : z > a * 1.25 ? ['up', 'dikkat'] : ['flat', 'aynı'];
   };
   box.innerHTML = `<h2>Son 3 ayın hataları</h2>
-    <p class="sub">Her kare oyunlarında yaptığın bir büyük hata. Kareye tıkla, o pozisyonu yeniden çöz. Farklı günlerde iki kez doğru çözdüğün hata yenilir ve yıldız olur. Analizli oyun sayısı: ${played.join(' → ')}.</p>
+    <p class="sub">Her kare oyunlarında kaçan bir fırsat. Kareye tıkla, o pozisyonu yeniden çöz. Farklı günlerde iki kez doğru çözdüğün hata yenilir ve yıldız olur. Analizli oyun sayısı: ${played.join(' → ')}.</p>
     <div class="hunt-score"><b>${won}</b> / ${b.total} hata yenildi<span class="track"><span class="fill" style="display:block;width:${won / b.total * 100}%"></span></span>
       <button class="btn" id="mapRand" type="button">Rastgele bir hatayla savaş</button></div>
     <div class="beasts">${kinds.map(([k, c]) => { const [cls, word] = trend(c); return `<button type="button" class="beast" data-kind="${k}" aria-pressed="${f === k}">

@@ -37,10 +37,12 @@ if (best && kind !== 'pat') {                                           // pat c
   assert.doesNotMatch(g, /[a-h][1-8]/, 'no square names leaked: ' + g);
   const wrong = await page.evaluate((fen, best) => new koc.Chess(fen).moves({ verbose: true }).map(m => m.from + m.to).find(u => u !== best.slice(0, 4)), fen, best);
   await move(wrong);
-  assert.match(await say(), /olmaz|değil/, 'wrong move must be rejected');
+  assert.match(await say(), /rakip gözüyle bak/, 'wrong move: opponent view: ' + await say());
+  assert.doesNotMatch(await say(), /olmaz/);
+  assert.equal(await page.$eval('#coachRule', e => e.hidden), true, 'no golden rule on a wrong answer');
   await new Promise(r => setTimeout(r, 1000));
   await move(best);
-  assert.match(await say(), /aferin/, 'best move must be praised: ' + await say());
+  assert.match(await say(), /Dikkatle bakıp buldun/, 'best move: process praise: ' + await say());
   assert.equal(await stars(), 1);
   assert.equal(await page.$eval('#coachRule', e => e.hidden), false, 'golden rule shown');
 }

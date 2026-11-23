@@ -11,7 +11,7 @@ const block = html.split('// AKIL-BASLA')[1].split('// AKIL-BITIR')[0];
 const dir = mkdtempSync(join(tmpdir(), 'akil-'));
 const file = join(dir, 'akil.mjs');
 const chessUrl = pathToFileURL(join(process.cwd(), 'node_modules/chess.js/dist/esm/chess.js')).href;
-writeFileSync(file, `import { Chess } from '${chessUrl}';\n${block}\nexport { explain, hangingPieces, leitnerNext, isBeaten, pickTheme, makeStalemateTrap, thinkTimes, sayable, answer, dangerReport, parentMetrics, KINDS, difficultyFor, gameStats, pendingReviews, reviewTruth, guessScore, reviewPgn, monthBuckets, weekDays, weekStart, weekWork, normBest };`);
+writeFileSync(file, `import { Chess } from '${chessUrl}';\n${block}\nexport { explain, hangingPieces, leitnerNext, isBeaten, pickTheme, makeStalemateTrap, thinkTimes, sayable, answer, dangerReport, parentMetrics, KINDS, difficultyFor, gameStats, pendingReviews, reviewTruth, guessScore, reviewPgn, monthBuckets, weekDays, weekStart, weekWork, normBest, KONTROL, thinkNote, rakipGozu };`);
 const A = await import(pathToFileURL(file).href);
 
 const cases = [
@@ -220,5 +220,30 @@ assert.equal(d3.mateThreat, 'd1');
   assert.equal(A.normBest(f, 'e1f1'), 'e1f1');                 // king step untouched
   assert.equal(A.normBest(f, null), null);
 }
+
+// P6: one check sentence, read everywhere; think-time note states facts, no diagnosis
+{
+  assert.equal(A.KONTROL, 'Hamleni bulunca: Rakip ne yapar? Şah, alma, tehdit.');
+  assert.equal(A.KINDS.matIzin.kural, A.KONTROL);
+  const sat = A.answer('ŞAT nedir?')[0];
+  assert.ok(sat.includes(A.KONTROL), 'ŞAT entry uses KONTROL');
+  assert.ok(sat.indexOf('Rakip') < sat.indexOf('Şah çekebilir'), 'ŞAT: opponent first: ' + sat);
+  const slow = A.thinkNote({ n: 6, bl: 30, ok: 20 });
+  assert.ok(slow.endsWith(A.KONTROL) && /30/.test(slow) && /20/.test(slow), slow);
+  assert.doesNotMatch(slow, /acele|iyi|sez/i, 'fact only, no diagnosis');
+  const fast = A.thinkNote({ n: 6, bl: 5, ok: 20 });
+  assert.match(fast, /bak/); assert.doesNotMatch(fast, /acele/i);
+  assert.equal(A.thinkNote({ n: 4, bl: 30, ok: 20 }), '');
+  assert.equal(A.thinkNote({ n: 9, bl: 22, ok: 20 }), '');
+}
+// P12: wrong move told from the opponent's side, never 'olmaz'
+for (const [kind, fen, played] of cases) {
+  if (kind === 'bedava' || kind === 'matKacti') continue;             // need a best move; wrong answers explain with best = null
+  const ex = A.explain(fen, played, null), s = A.rakipGozu('X', ex);
+  assert.ok(s.endsWith('Bir de rakip gözüyle bak.'), `${kind}: ${s}`);
+  assert.doesNotMatch(s, /olmaz/);
+  if (kind !== 'pat') assert.match(s, /^<b>X<\/b> ile rakip .*(yapabiliyor|alabiliyor|saldırabiliyor)\./, `${kind}: ${s}`);
+}
+assert.equal(A.rakipGozu('X', { kind: 'diger' }), 'Bir de rakip gözüyle bak.');
 
 console.log('OK: all brain tests pass');
