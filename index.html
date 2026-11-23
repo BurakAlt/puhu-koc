@@ -578,6 +578,13 @@ function weekDays(stars, now) {
   const key = new Date(weekStart(now)).toLocaleDateString('sv-SE');        // local YYYY-MM-DD keys compare as strings
   return Object.entries(stars).filter(([d, v]) => v && d >= key).length;
 }
+// What was practised since this week's Monday: step totals from the daily log, plus reviews dated this week.
+function weekWork(gun, incel, now) {
+  const ws = weekStart(now), key = new Date(ws).toLocaleDateString('sv-SE'), out = { hata: 0, avci: 0, bulmaca: 0, mac: 0 };
+  for (const [d, v] of Object.entries(gun)) if (d >= key) for (const k of ['hata', 'avci', 'bulmaca']) out[k] += v[k] || 0;
+  out.mac = Object.values(incel).filter(r => r.t >= ws).length;
+  return out;
+}
 function parentMetrics(games, me, now, nWeeks = 12) {
   const WEEK = 7 * 864e5, first = weekStart(now) - (nWeeks - 1) * WEEK;
   const weeks = Array.from({ length: nWeeks }, (_, i) => ({ start: first + i * WEEK, games: 0, minutes: 0, W: 0, L: 0, D: 0 }));
@@ -1588,7 +1595,8 @@ async function renderVeli() {
   const wsKey = new Date(ws).toLocaleDateString('sv-SE');                  // keys are local YYYY-MM-DD, compare as strings
   const sumSince = obj => Object.entries(obj).filter(([d]) => d >= wsKey).reduce((a, [, v]) => a + v, 0);
   const stars = sumSince(starsAll()), days = weekDays(starsAll(), now);
-  const mins = Math.round(sumSince(store.get('dakika', {})));
+  const ww = weekWork(store.get('gun', {}), reviewed(), now);
+  const work = [[ww.hata, 'hata kartı'], [ww.avci, 'tehdit avı'], [ww.bulmaca, 'bulmaca'], [ww.mac, 'konuşulan maç']].filter(([n]) => n).map(([n, l]) => `${n} ${l}`).join(', ') || 'bu hafta henüz çalışma yok';
   const pzWeek = Array.isArray(S.pz) ? S.pz.filter(p => p.date >= ws) : null;
   const b = m.blunders, tw = m.thisWeek, lw = m.lastWeek;
 
@@ -1597,7 +1605,7 @@ async function renderVeli() {
   if (m.last30.total && m.last30.fastShare > 0.5) notes.push(`Son 30 günde oyunlarının %${Math.round(m.last30.fastShare * 100)}'i hızlı (bullet/blitz). Düşünmeye vakit kalan 15+10 rapid oyunlar gelişime daha çok katkı verir.`);
   if (m.last30.late >= 3) notes.push(`Son 30 günde ${m.last30.late} oyun gece 22:00 ile sabah 06:00 arasında oynanmış.`);
   if (tw.games >= 25) notes.push(`Bu hafta ${tw.games} oyun oynadı. Çok oyun az inceleme demek olabilir; Puhu’daki “Hatalarım” bölümüne zaman ayırması iyi olur.`);
-  if (b.recent != null && b.before != null) notes.push(b.recent < b.before ? `Güzel haber: son 10 analizli oyunda büyük hata ortalaması ${n1(b.recent)}, önceki 10 oyunda ${n1(b.before)}. Azalıyor.` : `Son 10 analizli oyunda büyük hata ortalaması ${n1(b.recent)}, önceki 10 oyunda ${n1(b.before)}. Henüz düşüş yok.`);
+  if (b.recent != null && b.before != null) notes.push(`Son 10 analizli oyunda büyük hata ortalaması ${n1(b.recent)}, önceki 10 oyunda ${n1(b.before)}. Bu sayı yalnız analiz istenen oyunlardan gelir ve yanıltabilir; asıl ölçüt Karnem’deki eğilim tablosudur.`);
   if (b.n < 10) notes.push('Hata eğilimini ölçmek için oyunların analiz edilmesi gerekiyor. Lichess’te oyun bitince “Bilgisayar analizi iste” demesini teşvik edin.');
 
   const recent = S.games.slice(0, 10).map(g => {
@@ -1609,12 +1617,12 @@ async function renderVeli() {
     <div class="kpis">
       ${kpi('Bu hafta oynanan oyun', tw.games, `${tw.W} galibiyet, ${tw.D} beraberlik, ${tw.L} yenilgi · ${fmtDelta(tw.games, lw.games)}`)}
       ${kpi('Bu hafta oyunda geçen süre', `${n1((tw.minutes / 60))} sa`, fmtDelta(0, n1((lw.minutes / 60)), ' sa'))}
-      ${kpi('Rapid puanı', rapidNow ?? '–', rapid30 && rapidNow ? `30 gün önce ${rapid30.v}, değişim ${rapidNow - rapid30.v >= 0 ? '+' : ''}${rapidNow - rapid30.v}` : '')}
-      ${kpi('Oyun başına büyük hata', b.recent == null ? '–' : n1(b.recent), b.before == null ? `${b.n} analizli oyuna göre` : `önceki 10 oyunda ${n1(b.before)}`)}
+      ${kpi('Oyun başına büyük hata (yalnız analizli oyunlar)', b.recent == null ? '–' : n1(b.recent), b.before == null ? `${b.n} analizli oyuna göre` : `önceki 10 oyunda ${n1(b.before)}`)}
       ${kpi('Gece oyunları (son 30 gün)', m.last30.late, `toplam ${m.last30.total} oyundan, 22:00–06:00 arası`)}
       ${kpi('Hızlı oyun oranı (son 30 gün)', `%${Math.round(m.last30.fastShare * 100)}`, 'bullet ve blitz')}
-      ${kpi('Puhu ile çalışma (bu hafta)', `${days} / 7 gün`, `${stars} yıldız, ${mins} dakika · yalnız bu cihaz`)}
+      ${kpi('Puhu ile çalışma (bu hafta)', `${days} / 7 gün`, `${stars} yıldız · ${work} · yalnız bu cihaz`)}
       ${kpi('Lichess bulmacaları (bu hafta)', pzWeek ? pzWeek.length : '–', pzWeek ? `${pzWeek.length ? Math.round(pzWeek.filter(p => p.win).length / pzWeek.length * 100) : 0}% doğru` : S.pz === 'giris' ? 'Lichess ile giriş yapınca görünür' : 'Görmek için çıkış yapıp tekrar giriş yapın')}
+      ${kpi('Rapid puanı', rapidNow ?? '–', rapid30 && rapidNow ? `30 gün önce ${rapid30.v}, değişim ${rapidNow - rapid30.v >= 0 ? '+' : ''}${rapidNow - rapid30.v}` : '')}
     </div>
     ${notes.length ? `<div class="notes"><b>Koçun ebeveyne notu</b><ul>${notes.map(n => `<li>${n}</li>`).join('')}</ul></div>` : ''}
     <div class="charts">

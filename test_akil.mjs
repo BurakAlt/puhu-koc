@@ -11,7 +11,7 @@ const block = html.split('// AKIL-BASLA')[1].split('// AKIL-BITIR')[0];
 const dir = mkdtempSync(join(tmpdir(), 'akil-'));
 const file = join(dir, 'akil.mjs');
 const chessUrl = pathToFileURL(join(process.cwd(), 'node_modules/chess.js/dist/esm/chess.js')).href;
-writeFileSync(file, `import { Chess } from '${chessUrl}';\n${block}\nexport { explain, hangingPieces, leitnerNext, isBeaten, pickTheme, makeStalemateTrap, thinkTimes, sayable, answer, dangerReport, parentMetrics, KINDS, difficultyFor, gameStats, pendingReviews, reviewTruth, guessScore, reviewPgn, monthBuckets, weekDays, weekStart };`);
+writeFileSync(file, `import { Chess } from '${chessUrl}';\n${block}\nexport { explain, hangingPieces, leitnerNext, isBeaten, pickTheme, makeStalemateTrap, thinkTimes, sayable, answer, dangerReport, parentMetrics, KINDS, difficultyFor, gameStats, pendingReviews, reviewTruth, guessScore, reviewPgn, monthBuckets, weekDays, weekStart, weekWork };`);
 const A = await import(pathToFileURL(file).href);
 
 const cases = [
@@ -193,6 +193,15 @@ assert.equal(d3.mateThreat, 'd1');
   assert.equal(A.weekDays({ '2026-11-22': 5, '2026-11-16': 2 }, now), 0);          // last week does not count
   assert.equal(A.weekDays({ '2026-11-23': 2, '2026-11-25': 1, '2026-11-20': 4 }, now), 2);  // gap keeps the count
   assert.equal(A.weekDays({ '2026-11-24': 0 }, now), 0);                           // zero stars is not a day
+}
+
+{ // weekWork: per-step totals since Monday; reviews counted only if dated this week
+  const now = new Date(2026, 10, 25, 12).getTime();
+  const gun = { '2026-11-22': { hata: 9, avci: 9 }, '2026-11-23': { hata: 3, bulmaca: 2 }, '2026-11-25': { hata: 3, avci: 5, bulmaca: 4 } };
+  assert.deepEqual(A.weekWork(gun, {}, now), { hata: 6, avci: 5, bulmaca: 6, mac: 0 });
+  assert.deepEqual(A.weekWork({}, {}, now), { hata: 0, avci: 0, bulmaca: 0, mac: 0 });
+  const inc = { a: { t: now - 864e5 }, b: { t: now - 20 * 864e5 }, c: {} };
+  assert.equal(A.weekWork({}, inc, now).mac, 1);              // old and undated reviews are not counted
 }
 
 console.log('OK: all brain tests pass');

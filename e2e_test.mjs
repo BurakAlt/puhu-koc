@@ -94,6 +94,9 @@ const [ga, gb] = (await page.$eval('#gateQ', e => e.textContent)).match(/\d+/g).
 await page.type('#gateIn', String(ga * gb));
 await page.click('#veliGate button');
 await page.waitForFunction(() => document.querySelectorAll('#veliBody .kpi').length === 8, { timeout: 15000 });
+assert.equal(await page.$$eval('#veliBody .kpi', k => k.at(-1).querySelector('span').textContent), 'Rapid puanı', 'rapid box last');
+assert.match(await page.$eval('#veliBody', e => e.textContent), /yalnız analizli oyunlar/);
+assert.doesNotMatch(await page.$$eval('#veliBody .kpi', k => k.find(x => /Puhu ile çalışma/.test(x.textContent)).textContent), /dakika/);
 assert.equal(await page.$$eval('#veliBody svg.chart', s => s.length) >= 1, true, 'weekly chart drawn');
 await page.screenshot({ path: new URL('./veli_e2e.png', import.meta.url).pathname.replace(/^\//, ''), fullPage: true });
 
