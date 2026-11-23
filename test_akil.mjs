@@ -11,7 +11,7 @@ const block = html.split('// AKIL-BASLA')[1].split('// AKIL-BITIR')[0];
 const dir = mkdtempSync(join(tmpdir(), 'akil-'));
 const file = join(dir, 'akil.mjs');
 const chessUrl = pathToFileURL(join(process.cwd(), 'node_modules/chess.js/dist/esm/chess.js')).href;
-writeFileSync(file, `import { Chess } from '${chessUrl}';\n${block}\nexport { explain, hangingPieces, leitnerNext, pickTheme, makeStalemateTrap, thinkTimes, sayable, answer, dangerReport, parentMetrics, KINDS, difficultyFor, gameStats, pendingReviews, reviewTruth, guessScore, reviewPgn, monthBuckets };`);
+writeFileSync(file, `import { Chess } from '${chessUrl}';\n${block}\nexport { explain, hangingPieces, leitnerNext, isBeaten, pickTheme, makeStalemateTrap, thinkTimes, sayable, answer, dangerReport, parentMetrics, KINDS, difficultyFor, gameStats, pendingReviews, reviewTruth, guessScore, reviewPgn, monthBuckets };`);
 const A = await import(pathToFileURL(file).href);
 
 const cases = [
@@ -40,9 +40,16 @@ assert.deepEqual(A.hangingPieces('4k3/8/8/8/8/2b5/1P6/R1K5 w - - 0 1', 'w'), [])
 const now = 1_000_000_000_000, day = 864e5;
 let c = A.leitnerNext(undefined, true, now);
 assert.equal(c.box, 2); assert.equal(c.due, now + day);
-for (const d of [3, 7, 16, 35]) { c = A.leitnerNext(c, true, now); assert.equal(c.due, now + d * day); }
-c = A.leitnerNext(c, true, now); assert.equal(c.due, now + 35 * day, 'top box stays at 35 days');
+for (const d of [3, 7, 16, 35]) { const t = c.due; c = A.leitnerNext(c, true, t); assert.equal(c.due, t + d * day); }
+{ const t = c.due; c = A.leitnerNext(c, true, t); assert.equal(c.due, t + 35 * day, 'top box stays at 35 days'); }
 c = A.leitnerNext(c, false, now); assert.equal(c.box, 1); assert.equal(c.due, now + 10 * 60e3);
+// E1: a card that is not due yet does not skip boxes on a correct answer
+{ const card = { box: 2, due: now + day };
+  assert.deepEqual(A.leitnerNext(card, true, now), card, 'not due: correct answer changes nothing');
+  assert.deepEqual(A.leitnerNext(card, true, now + day), { box: 3, due: now + day + 3 * day }, 'due: box +1');
+  assert.deepEqual(A.leitnerNext(card, false, now), { box: 1, due: now + 10 * 60e3 }, 'not due: wrong still box 1, 10 min');
+  assert.equal(A.leitnerNext(undefined, true, now).box, 2, 'new card goes to box 2');
+  assert.equal(A.isBeaten({ box: 2, due: 0 }), false); assert.equal(A.isBeaten({ box: 3, due: 0 }), true); assert.equal(A.isBeaten(undefined), false); }
 
 // pickTheme (P2): returns the weakest mistake KIND, so mastery is credited to the right kind
 const profile = { asili: 10, catal: 1 }, mastery = { asili: { ok: 0, n: 0 }, catal: { ok: 0, n: 0 } };

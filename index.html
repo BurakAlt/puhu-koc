@@ -476,9 +476,11 @@ function explain(fen0, played, best, comment = '') {
 const DAY = 864e5, BOX_DAYS = [0, 0, 1, 3, 7, 16, 35]; // box 2..6 -> 1, 3, 7, 16, 35 days
 function leitnerNext(card, ok, now = Date.now()) {
   if (!ok) return { box: 1, due: now + 10 * 60e3 }; // wrong: back in 10 minutes, not instantly
+  if (card && card.due > now) return card;            // not due yet: a correct answer must not skip boxes
   const box = Math.min((card?.box || 1) + 1, 6);
   return { box, due: now + BOX_DAYS[box] * DAY };
 }
+const isBeaten = rec => (rec?.box || 0) >= 3;       // right on two different days (box 2 -> 3 needs a due card)
 
 // Adaptive theme choice: weight = share of this mistake kind × (1 − Laplace-smoothed mastery).
 // Highest weight first, then proportional sampling (rng() = 0 picks the weakest). Returns the mistake KIND,
@@ -988,7 +990,7 @@ function show(user, games) {
 }
 
 // ---------- P3: engine-free outcome stats, cached per game, computed in small slices so the page never freezes ----------
-const RELEASES = [['Paket 1: ölçüm düzeltmeleri', '2026-11-21'], ['Maç sonrası sohbet', '2026-11-21']];   // trend is read against these dates
+const RELEASES = [['Paket 1: ölçüm düzeltmeleri', '2026-11-21'], ['Maç sonrası sohbet', '2026-11-21'], ['Paket 1b: temizlik', '2026-11-23']];   // trend is read against these dates
 const statsKey = () => 'stats:' + S.me;
 let statsRun = 0;
 async function startStats() {
@@ -1670,7 +1672,7 @@ function renderKarne() {
   renderMap();
 }
 const GLYPH = { pat: '½', matIzin: '♚', matKacti: '♛', asili: '♞', tehdit: '!', korumasiz: '♜', catal: '⑂', bedava: '♟', diger: '?' };
-const beaten = m => (store.get('srs', {})[m.key]?.box || 0) >= 2;
+const beaten = m => isBeaten(store.get('srs', {})[m.key]);
 function renderMap() {
   const box = $('mapBox'); if (!box) return;
   const b = monthBuckets(S.mistakes), f = S.mapKind, won = b.months.flatMap(x => x.items).filter(beaten).length;
@@ -1684,7 +1686,7 @@ function renderMap() {
     return z < a * 0.8 ? ['down', 'azalıyor'] : z > a * 1.25 ? ['up', 'dikkat'] : ['flat', 'aynı'];
   };
   box.innerHTML = `<h2>Son 3 ayın hataları</h2>
-    <p class="sub">Her kare oyunlarında yaptığın bir büyük hata. Kareye tıkla, o pozisyonu yeniden çöz. İki kez doğru çözdüğün hata yenilir ve yıldız olur. Analizli oyun sayısı: ${played.join(' → ')}.</p>
+    <p class="sub">Her kare oyunlarında yaptığın bir büyük hata. Kareye tıkla, o pozisyonu yeniden çöz. Farklı günlerde iki kez doğru çözdüğün hata yenilir ve yıldız olur. Analizli oyun sayısı: ${played.join(' → ')}.</p>
     <div class="hunt-score"><b>${won}</b> / ${b.total} hata yenildi<span class="track"><span class="fill" style="display:block;width:${won / b.total * 100}%"></span></span>
       <button class="btn" id="mapRand" type="button">Rastgele bir hatayla savaş</button></div>
     <div class="beasts">${kinds.map(([k, c]) => { const [cls, word] = trend(c); return `<button type="button" class="beast" data-kind="${k}" aria-pressed="${f === k}">
