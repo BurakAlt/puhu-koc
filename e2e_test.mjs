@@ -167,6 +167,21 @@ await page.waitForFunction(() => window.koc?.S.loaded, { timeout: 20000 });
 assert.equal(await page.$eval('#cta', e => e.hidden), true, 'cta hidden when the plan is done');
 assert.equal(await page.$eval('#restCard', e => e.hidden), false, 'rest card shown');
 
+// 7. E7: wrong move then mode switch within 100 ms: the stale timer must not touch the board or throw
+await page.click('[data-go="hata"]');
+await page.waitForFunction(() => window.koc.T.it && !window.koc.T.done, { timeout: 5000 });
+const wrongUci = await page.evaluate(() => { const c = new koc.Chess(koc.T.it.fen); return c.moves({ verbose: true }).map(m => m.from + m.to).find(u => u !== koc.T.it.best); });
+await clickSquare(wrongUci.slice(0, 2)); await clickSquare(wrongUci.slice(2, 4));
+await page.click('[data-go="bulmaca"]');
+await new Promise(r => setTimeout(r, 1200));
+assert.equal(await page.evaluate(() => koc.S.mode), 'bulmaca');
+// parent panel: checklist persists, backup carries only progress, opponent shown as rakip (puan)
+await page.click('[data-go="veli"]');
+await page.waitForSelector('#yedekIndir', { timeout: 15000 });
+await page.click('[data-kontrol="kid"]');
+assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('veliKontrol')).kid), true, 'checklist stored');
+assert.match(await page.$$eval('#veliBody .sheet', els => els.find(e => /Son 10 oyun/.test(e.textContent)).textContent), /rakip \(\d+\)|bilgisayar/, 'opponent as rakip (puan)');
+
 assert.deepEqual(errors, [], 'no page errors');
 await browser.close();
 console.log('OK: e2e passes');

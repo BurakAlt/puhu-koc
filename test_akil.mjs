@@ -11,7 +11,7 @@ const block = html.split('// AKIL-BASLA')[1].split('// AKIL-BITIR')[0];
 const dir = mkdtempSync(join(tmpdir(), 'akil-'));
 const file = join(dir, 'akil.mjs');
 const chessUrl = pathToFileURL(join(process.cwd(), 'node_modules/chess.js/dist/esm/chess.js')).href;
-writeFileSync(file, `import { Chess } from '${chessUrl}';\n${block}\nexport { explain, hangingPieces, leitnerNext, isBeaten, pickTheme, makeStalemateTrap, thinkTimes, sayable, answer, dangerReport, parentMetrics, KINDS, difficultyFor, gameStats, pendingReviews, reviewTruth, guessScore, reviewPgn, monthBuckets, weekDays, weekStart, weekWork, normBest, KONTROL, thinkNote, rakipGozu };`);
+writeFileSync(file, `import { Chess } from '${chessUrl}';\n${block}\nexport { explain, hangingPieces, leitnerNext, isBeaten, pickTheme, makeStalemateTrap, thinkTimes, sayable, answer, dangerReport, parentMetrics, KINDS, difficultyFor, gameStats, pendingReviews, reviewTruth, guessScore, reviewPgn, monthBuckets, weekDays, weekStart, weekWork, normBest, KONTROL, thinkNote, rakipGozu, oppLabel, packProgress, unpackProgress };`);
 const A = await import(pathToFileURL(file).href);
 
 const cases = [
@@ -245,5 +245,21 @@ for (const [kind, fen, played] of cases) {
   if (kind !== 'pat') assert.match(s, /^<b>X<\/b> ile rakip .*(yapabiliyor|alabiliyor|saldırabiliyor)\./, `${kind}: ${s}`);
 }
 assert.equal(A.rakipGozu('X', { kind: 'diger' }), 'Bir de rakip gözüyle bak.');
+
+// E7: opponent shown as "rakip (puan)", never the name
+assert.equal(A.oppLabel({ user: { name: 'SomeName' }, rating: 1234 }), 'rakip (1234)');
+assert.equal(A.oppLabel({ user: { name: 'SomeName' } }), 'rakip');
+assert.equal(A.oppLabel({ aiLevel: 3 }), 'bilgisayar');
+// E7: progress backup keeps only whitelisted progress keys
+const kv = { stars: { d: 3 }, gun: { d: { hata: 1 } }, mastery: { a: 1 }, srs: { 'g:1': { due: 1 } }, incelenen: { g1: { t: 1 } }, modSayac: { hata: { acilis: 1, bitis: 0 } },
+  games: [{ opp: 'x' }], token: 'SECRET', user: { username: 'kid' } };
+const packed = A.packProgress(k => kv[k]);
+const back = A.unpackProgress(packed);
+assert.deepEqual(Object.keys(back).sort(), ['gun', 'incelenen', 'mastery', 'modSayac', 'srs', 'stars']);
+assert.deepEqual(back.stars, { d: 3 });
+assert.doesNotMatch(packed, /SECRET|kid|games/);
+assert.equal(A.unpackProgress('not json'), null);
+assert.equal(A.unpackProgress('{"app":"other","data":{}}'), null);
+assert.deepEqual(A.unpackProgress(JSON.stringify({ app: 'puhu-koc', v: 1, data: { stars: { d: 1 }, token: 'x', srs: 5 } })), { stars: { d: 1 } });
 
 console.log('OK: all brain tests pass');

@@ -778,6 +778,16 @@ function rakipGozu(san, ex) {
     : '';
   return s ? `${s} ${end}` : end;
 }
+// Opponent is shown as "rakip (puan)", never by name.
+const oppLabel = p => !p?.user ? 'bilgisayar' : p.rating ? `rakip (${p.rating})` : 'rakip';
+// Progress backup: only these keys, nothing about games, opponents or the account.
+const PROGRESS_KEYS = ['stars', 'gun', 'mastery', 'srs', 'incelenen', 'modSayac'];
+const packProgress = read => JSON.stringify({ app: 'puhu-koc', v: 1, data: Object.fromEntries(PROGRESS_KEYS.filter(k => read(k) != null).map(k => [k, read(k)])) });
+function unpackProgress(text) {
+  let o; try { o = JSON.parse(text); } catch { return null; }
+  if (o?.app !== 'puhu-koc' || !o.data || typeof o.data !== 'object') return null;
+  return Object.fromEntries(PROGRESS_KEYS.filter(k => o.data[k] && typeof o.data[k] === 'object' && !Array.isArray(o.data[k])).map(k => [k, o.data[k]]));
+}
 // AKIL-BITIR
 
 const $ = id => document.getElementById(id);
@@ -926,7 +936,9 @@ function renderHome() {
 
 // ---------- navigation ----------
 const MODES = { hata: 'Hatalarım', avci: 'Tehdit avı', bulmaca: 'Bulmaca', mac: 'Maç sonrası' };
+let boardGen = 0;   // bumped on every mode/card change; board timers bail out if it moved
 function go(mode) {
+  boardGen++;
   S.mode = mode;
   history.replaceState(null, '', '#' + mode);
   document.querySelectorAll('[data-go]').forEach(b => b.dataset.go === mode ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current'));
@@ -986,8 +998,8 @@ $('bHint').onclick = () => hintFn(); $('bShow').onclick = () => showFn(); $('bNe
 const colorOf = g => g.players.white.user?.id === S.me ? 'white' : 'black';
 const resultOf = g => !g.winner ? 'D' : g.winner === colorOf(g) ? 'W' : 'L';
 const isMine = (g, i) => (i % 2 === 0) === (colorOf(g) === 'white');
-const oppName = g => g.players[colorOf(g) === 'white' ? 'black' : 'white'].user?.name || 'bilgisayar';
-const gameInfo = g => `${new Date(g.createdAt).toLocaleDateString('tr-TR')} tarihli oyun, rakip ${oppName(g)}.`;
+const oppName = g => oppLabel(g.players[colorOf(g) === 'white' ? 'black' : 'white']);
+const gameInfo = g => `${new Date(g.createdAt).toLocaleDateString('tr-TR')} tarihli oyun, ${oppName(g)}.`;
 function positions(g) {
   if (g._pos) return g._pos;
   const c = new Chess(), out = [{ fen: c.fen() }];
@@ -1185,6 +1197,7 @@ async function analyzeUnanalyzed() {
 // ---------- mode 1: Hatalarım (own blunders, spaced repetition) ----------
 const T = {};
 function nextMistake() {
+  boardGen++;
   onSquare = null; onMove = hataMove; hintFn = hataHint; showFn = hataShow; nextFn = nextMistake;
   if (!S.loaded) return coachSay('Oyunların yükleniyor, biraz bekle.', 'think');
   if (!S.mistakes.length) return coachSay('Henüz analizli hata bulamadım. Ben arka planda oyunlarına bakıyorum, birazdan tekrar dene.', 'think');
@@ -1229,7 +1242,8 @@ function hataMove(uci) {
   T.wrong++; hataRecord(false); lock();
   const ex = explain(fen, uci, null);
   coachSay(`${rakipGozu(trSan(m.san), ex)} Tekrar dene!`, 'think');
-  setTimeout(() => setPos(T.it.fen, { last: T.it.last }), 900);
+  const gen = boardGen;
+  setTimeout(() => { if (gen === boardGen) setPos(T.it.fen, { last: T.it.last }); }, 900);
 }
 function hataHint() {
   if (!T.it || T.done) return;
@@ -1268,6 +1282,7 @@ function buildHunts() {
 }
 const H = {};
 function nextHunt() {
+  boardGen++;
   onMove = () => {}; onSquare = huntClick; hintFn = huntHint; showFn = huntShow; nextFn = nextHunt;
   if (!S.loaded) return coachSay('Oyunların yükleniyor, biraz bekle.', 'think');
   S.hunts ??= buildHunts();
@@ -1331,6 +1346,7 @@ function puzzleSolved() {
   coachSay(clean ? 'Çözdün, hem de ilk denemede ve ipucusuz!' : 'Çözdün! Denemeye devam ettin ve buldun.', 'happy', KINDS[P.kind]?.kural || null);
 }
 async function nextPuzzle() {
+  boardGen++;
   onSquare = null; nextFn = nextPuzzle;
   const req = (P.req = (P.req || 0) + 1); // only the latest request may touch the board
   Object.assign(P, { wrong: 0, step: 0, sol: null, hinted: false, shown: false, kind: puzzleKind() });
@@ -1367,13 +1383,16 @@ function puzzleMove(uci) {
     const ex = explain(fen, uci, null);
     coachSay(`${rakipGozu(trSan(m.san), ex)} Tekrar dene!`, 'think');
     B.undo(); lock();
-    setTimeout(() => cg.set({ fen: B.fen(), lastMove: P.last, check: B.inCheck(), movable: { color: orient, dests: dests(B) } }), 700);
+    const gen = boardGen;
+    setTimeout(() => { if (gen === boardGen) cg.set({ fen: B.fen(), lastMove: P.last, check: B.inCheck(), movable: { color: orient, dests: dests(B) } }); }, 700);
     return;
   }
   sync(m); P.step++;
   if (P.step >= P.sol.length || B.isCheckmate()) { P.step = P.sol.length; return puzzleSolved(); }
   coachSay('Doğru, iyi baktın! Devam et.', 'happy');
+  const gen = boardGen;
   setTimeout(() => {
+    if (gen !== boardGen) return;
     const r = playUci(B, P.sol[P.step]); P.step++; P.last = [r.from, r.to];
     cg.set({ fen: B.fen(), lastMove: P.last, turnColor: orient, check: B.inCheck(), movable: { color: orient, dests: dests(B) } });
   }, 450);
@@ -1386,7 +1405,8 @@ function patMove(uci) {
   P.wrong++; lock();
   if (B.isStalemate()) coachSay(`<b>${trSan(m.san)}</b> ile ${KINDS.pat.yaz()} Tekrar dene!`, 'think');
   else coachSay(`<b>${trSan(m.san)}</b> mat değil. Bir de rakip gözüyle bak: şah nereye kaçabiliyor?`, 'think');
-  setTimeout(() => setPos(P.fen), 1000);
+  const gen = boardGen;
+  setTimeout(() => { if (gen === boardGen) setPos(P.fen); }, 1000);
 }
 
 // ---------- mode 4: Maç sonrası sohbet (feeling -> own guess -> Puhu's finding -> one-line lesson -> Lichess) ----------
@@ -1396,6 +1416,7 @@ const reviewed = () => store.get('incelenen:' + S.me, {});
 const moveLabel = ply => `${Math.floor(ply / 2) + 1}.${ply % 2 ? '..' : ''} ${trSan(positions(R.g)[ply + 1]?.san || '')}`;
 const FEELINGS = ['Kolaydı', 'Zordu', 'Şanssızdım', 'Çok eğlenceliydi'];
 function nextReview() {
+  boardGen++;
   onMove = () => {}; onSquare = null; nextFn = nextReview; hintFn = showFn = () => {};
   $('macPanel').innerHTML = '';
   if (!S.loaded) return coachSay('Oyunların yükleniyor, biraz bekle.', 'think');
@@ -1652,7 +1673,7 @@ async function renderVeli() {
 
   const recent = S.games.slice(0, 10).map(g => {
     const c = colorOf(g), opp = g.players[c === 'white' ? 'black' : 'white'], r = resultOf(g);
-    return `<tr><td>${new Date(g.createdAt).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' })}</td><td>${g.speed}</td><td>${opp.user?.name || 'bilgisayar'} ${opp.rating ? `(${opp.rating})` : ''}</td><td>${{ W: 'Kazandı', L: 'Kaybetti', D: 'Berabere' }[r]}</td><td class="n">${Math.round((g.lastMoveAt - g.createdAt) / 60e3)} dk</td><td><a href="https://lichess.org/${g.id}" target="_blank" rel="noopener">aç</a></td></tr>`;
+    return `<tr><td>${new Date(g.createdAt).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' })}</td><td>${g.speed}</td><td>${oppLabel(opp)}</td><td>${{ W: 'Kazandı', L: 'Kaybetti', D: 'Berabere' }[r]}</td><td class="n">${Math.round((g.lastMoveAt - g.createdAt) / 60e3)} dk</td><td><a href="https://lichess.org/${g.id}" target="_blank" rel="noopener">aç</a></td></tr>`;
   }).join('');
 
   $('veliBody').innerHTML = `
@@ -1683,8 +1704,28 @@ async function renderVeli() {
           ${revs.length ? `<table><tr><th>Maç</th><th>Nasıldı</th><th>Tahmini</th><th>Kendi dersi</th></tr>${revs.slice(0, 6).map(r => `<tr><td>${new Date(r.gameAt || r.t).toLocaleDateString('tr-TR')}</td><td>${escHtml(r.his || '–')}</td><td>${['Farklı yer', 'Yakın', 'Tam isabet'][r.puan] ?? '–'}</td><td>${escHtml(r.ders)}</td></tr>`).join('')}</table>` : ''}</section>`;
       })()}
       <section class="sheet"><h2>Son 10 oyun</h2><table><tr><th>Tarih</th><th>Hız</th><th>Rakip</th><th>Sonuç</th><th class="n">Süre</th><th></th></tr>${recent}</table></section>
+      <section class="sheet"><h2>Velinin kontrol listesi</h2><p class="sub">Elle işaretlenir, yalnız bu cihazda saklanır.</p>
+        ${KONTROL_LISTESI.map(([k, t]) => `<label style="display:block;margin:6px 0"><input type="checkbox" data-kontrol="${k}"${store.get('veliKontrol', {})[k] ? ' checked' : ''}> ${t}</label>`).join('')}</section>
+      <section class="sheet"><h2>İlerleme yedeği</h2><p class="sub">Yıldızlar, günlük çalışma, ustalık ve tekrar kayıtları. Oyunlar ve rakipler dosyaya girmez.</p>
+        <button class="btn" id="yedekIndir" type="button">Yedeği indir</button>
+        <label class="btn" style="cursor:pointer">Yedeği yükle<input id="yedekYukle" type="file" accept="application/json,.json" hidden></label><p class="sub" id="yedekMsg"></p></section>
     </div>`;
+  document.querySelectorAll('[data-kontrol]').forEach(c => c.onchange = () => store.set('veliKontrol', { ...store.get('veliKontrol', {}), [c.dataset.kontrol]: c.checked }));
+  $('yedekIndir').onclick = () => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([packProgress(progressRead)], { type: 'application/json' }));
+    a.download = `puhu-yedek-${today()}.json`; a.click(); URL.revokeObjectURL(a.href);
+  };
+  $('yedekYukle').onchange = async e => {
+    const d = unpackProgress(await e.target.files[0]?.text());
+    if (!d) { $('yedekMsg').textContent = 'Bu dosya Puhu yedeği değil.'; return; }
+    for (const [k, v] of Object.entries(d)) store.set(k === 'incelenen' ? 'incelenen:' + S.me : k, v);
+    $('yedekMsg').textContent = 'Yedek yüklendi.'; drawMe();
+  };
 }
+const KONTROL_LISTESI = [['kid', 'Lichess Kid modu açık.'], ['hesap', 'Hesabın e-postası ve şifresi velide.']];
+const progressRead = k => store.get(k === 'incelenen' ? 'incelenen:' + S.me : k, null);
+try { navigator.storage?.persist?.(); } catch {}
 
 // ---------- Karnem ----------
 function renderKarne() {
@@ -1744,7 +1785,7 @@ function renderMap() {
       <span class="ct" title="Ay ay hata sayısı">${c.join(' → ')}</span><span class="tr ${cls}">${word}</span></button>`; }).join('')}</div>
     <div class="hmap">${b.months.map(mo => `<div class="mcol"><h3>${mo.label} <small>${mo.items.length}</small></h3><div class="tiles">${
       mo.items.sort((x, y) => x.g.createdAt - y.g.createdAt).map(m => `<button type="button" class="tile${beaten(m) ? ' won' : ''}${f && f !== m.ex.kind ? ' dim' : ''}" data-key="${m.key}"
-        title="${new Date(m.g.createdAt).toLocaleDateString('tr-TR')}, rakip ${escHtml(oppName(m.g))}: ${KINDS[m.ex.kind].ad}${beaten(m) ? ' (yenildi)' : ''}">${beaten(m) ? '★' : GLYPH[m.ex.kind] || '?'}</button>`).join('')}</div></div>`).join('')}</div>`;
+        title="${new Date(m.g.createdAt).toLocaleDateString('tr-TR')}, ${oppName(m.g)}: ${KINDS[m.ex.kind].ad}${beaten(m) ? ' (yenildi)' : ''}">${beaten(m) ? '★' : GLYPH[m.ex.kind] || '?'}</button>`).join('')}</div></div>`).join('')}</div>`;
   box.querySelectorAll('.beast').forEach(e => e.onclick = () => { S.mapKind = S.mapKind === e.dataset.kind ? null : e.dataset.kind; renderMap(); });
   const fight = key => { T.pick = key; go('hata'); };
   box.querySelectorAll('.tile').forEach(e => e.onclick = () => fight(e.dataset.key));
