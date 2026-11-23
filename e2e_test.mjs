@@ -31,6 +31,10 @@ await page.evaluate(() => localStorage.clear());
 const { best, fen, kind } = await page.evaluate(() => ({ best: koc.T.it.best, fen: koc.T.it.fen, kind: koc.T.it.ex.kind }));
 console.log('hata item:', kind, best);
 if (best) {
+  await page.click('[data-ask="tehlike"]');
+  const g = await say();
+  assert.match(g, /senin görevin/, 'danger chip must not answer before the card is solved: ' + g);
+  assert.doesNotMatch(g, /[a-h][1-8]/, 'no square names leaked: ' + g);
   const wrong = await page.evaluate((fen, best) => new koc.Chess(fen).moves({ verbose: true }).map(m => m.from + m.to).find(u => u !== best.slice(0, 4)), fen, best);
   await move(wrong);
   assert.match(await say(), /olmaz|değil/, 'wrong move must be rejected');
