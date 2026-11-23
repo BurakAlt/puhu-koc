@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const URL_ = 'file:///' + new URL('./index.html', import.meta.url).pathname.replace(/^\//, '');
-const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ['--window-size=1366,1000'] });
+const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ['--window-size=1366,1000', '--mute-audio'] });
 const page = await browser.newPage();
 await page.setViewport({ width: 1366, height: 1000 });
 const errors = [];
