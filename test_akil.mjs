@@ -11,7 +11,7 @@ const block = html.split('// AKIL-BASLA')[1].split('// AKIL-BITIR')[0];
 const dir = mkdtempSync(join(tmpdir(), 'akil-'));
 const file = join(dir, 'akil.mjs');
 const chessUrl = pathToFileURL(join(process.cwd(), 'node_modules/chess.js/dist/esm/chess.js')).href;
-writeFileSync(file, `import { Chess } from '${chessUrl}';\n${block}\nexport { explain, hangingPieces, leitnerNext, isBeaten, pickTheme, makeStalemateTrap, thinkTimes, sayable, answer, dangerReport, parentMetrics, KINDS, difficultyFor, gameStats, pendingReviews, reviewTruth, guessScore, reviewPgn, monthBuckets };`);
+writeFileSync(file, `import { Chess } from '${chessUrl}';\n${block}\nexport { explain, hangingPieces, leitnerNext, isBeaten, pickTheme, makeStalemateTrap, thinkTimes, sayable, answer, dangerReport, parentMetrics, KINDS, difficultyFor, gameStats, pendingReviews, reviewTruth, guessScore, reviewPgn, monthBuckets, weekDays, weekStart };`);
 const A = await import(pathToFileURL(file).href);
 
 const cases = [
@@ -184,6 +184,15 @@ assert.equal(d3.mateThreat, 'd1');
   assert.deepEqual(b.kinds.tehdit, [0, 2, 1]);
   assert.deepEqual(b.kinds.catal, [1, 0, 0]);
   assert.equal(b.total, 4);                                   // August is outside the window
+}
+
+{ // weekDays: starred days since Monday of this week (local keys), gaps never reset
+  const now = new Date(2026, 10, 25, 12).getTime();           // Wednesday 25 Nov 2026
+  assert.equal(A.weekDays({}, now), 0);
+  assert.equal(A.weekDays({ '2026-11-23': 2, '2026-11-24': 1, '2026-11-25': 3 }, now), 3);
+  assert.equal(A.weekDays({ '2026-11-22': 5, '2026-11-16': 2 }, now), 0);          // last week does not count
+  assert.equal(A.weekDays({ '2026-11-23': 2, '2026-11-25': 1, '2026-11-20': 4 }, now), 2);  // gap keeps the count
+  assert.equal(A.weekDays({ '2026-11-24': 0 }, now), 0);                           // zero stars is not a day
 }
 
 console.log('OK: all brain tests pass');

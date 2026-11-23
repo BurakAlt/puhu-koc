@@ -573,6 +573,11 @@ function dangerReport(fen) {
 
 // Parent dashboard numbers from Lichess games (local time, weeks start on Monday).
 function weekStart(ts) { const d = new Date(ts); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - (d.getDay() + 6) % 7); return d.getTime(); }
+// Days with at least one star since this week's Monday (stars: {'YYYY-MM-DD': n}); a missed day resets nothing.
+function weekDays(stars, now) {
+  const key = new Date(weekStart(now)).toLocaleDateString('sv-SE');        // local YYYY-MM-DD keys compare as strings
+  return Object.entries(stars).filter(([d, v]) => v && d >= key).length;
+}
 function parentMetrics(games, me, now, nWeeks = 12) {
   const WEEK = 7 * 864e5, first = weekStart(now) - (nWeeks - 1) * WEEK;
   const weeks = Array.from({ length: nWeeks }, (_, i) => ({ start: first + i * WEEK, games: 0, minutes: 0, W: 0, L: 0, D: 0 }));
@@ -839,16 +844,10 @@ function bump(step) {
   countMode(step, 'bitis');
   drawPill(); renderHome();
 }
-function streak() {
-  const s = starsAll(); let n = 0; const d = new Date();
-  if (!s[d.toLocaleDateString('sv-SE')]) d.setDate(d.getDate() - 1);
-  while (s[d.toLocaleDateString('sv-SE')]) { n++; d.setDate(d.getDate() - 1); }
-  return n;
-}
 function drawMe() {
   const t = totalStars(), r = RANKS.filter(x => t >= x[2]).at(-1);
   $('starTotal').textContent = t; $('rankName').textContent = r[1];
-  const st = streak(); $('streak').textContent = st ? `${st} gündür her gün çalışıyorsun` : 'Bugün ilk yıldızını topla';
+  const wd = weekDays(starsAll(), Date.now()); $('streak').textContent = wd ? `Bu hafta ${wd} / 7 gün` : 'Bu hafta ilk yıldızını topla';
 }
 function masteryAdd(kind, ok) { const m = store.get('mastery', {}); m[kind] = { ok: (m[kind]?.ok || 0) + (ok ? 1 : 0), n: (m[kind]?.n || 0) + 1 }; store.set('mastery', m); }
 
@@ -860,14 +859,13 @@ function renderHome() {
   }).join('');
   const next = Object.keys(STEPS).find(k => (p[k] || 0) < GOALS[k]);
   const started = Object.values(p).some(Boolean);
-  $('cta').textContent = next ? (started ? `Devam et: ${STEPS[next][0]}` : 'Antrenmana başla') : 'Bugünlük bitti! Serbest bulmaca çöz';
-  $('cta').onclick = () => go(next || 'bulmaca');
+  $('cta').textContent = started ? `Devam et: ${STEPS[next]?.[0]}` : 'Antrenmana başla';
+  $('cta').onclick = () => go(next);
   const t = totalStars(), cur = RANKS.filter(x => t >= x[2]).length - 1;
   $('ladder').innerHTML = RANKS.map(([g, n], i) => `<li class="${i < cur ? 'got' : i === cur ? 'now' : ''}"><span class="g" aria-hidden="true">${badgeHtml(i)}</span>${n}</li>`).join('');
   const allDone = Object.keys(STEPS).every(k => (p[k] || 0) >= GOALS[k]);
   $('restCard').hidden = !allDone;                                      // healthy stop: the plan has an end
-  $('cta').classList.toggle('primary', !allDone);
-  if (allDone) $('cta').textContent = 'Yine de bulmaca çöz';
+  $('cta').hidden = allDone;
   $('ladderNote').textContent = RANKS[cur + 1] ? `${RANKS[cur + 1][1]} rütbesine ${RANKS[cur + 1][2] - t} yıldız kaldı. Yardımsız doğru cevap 2 yıldız, ipucuyla doğru cevap 1 yıldız.` : 'En yüksek rütbedesin: Şah!';
   const waiting = S.loaded ? pendingReviews(S.games, reviewed(), Date.now()).length : 0;
   $('macCard').hidden = !waiting;
@@ -1589,7 +1587,7 @@ async function renderVeli() {
   const rapid30 = allRapid.filter(p => now - p.t > 30 * 864e5).at(-1);
   const wsKey = new Date(ws).toLocaleDateString('sv-SE');                  // keys are local YYYY-MM-DD, compare as strings
   const sumSince = obj => Object.entries(obj).filter(([d]) => d >= wsKey).reduce((a, [, v]) => a + v, 0);
-  const stars = sumSince(starsAll()), days = Object.entries(starsAll()).filter(([d, v]) => v && d >= wsKey).length;
+  const stars = sumSince(starsAll()), days = weekDays(starsAll(), now);
   const mins = Math.round(sumSince(store.get('dakika', {})));
   const pzWeek = Array.isArray(S.pz) ? S.pz.filter(p => p.date >= ws) : null;
   const b = m.blunders, tw = m.thisWeek, lw = m.lastWeek;

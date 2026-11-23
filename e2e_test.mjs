@@ -150,6 +150,16 @@ await page.screenshot({ path: new URL('./kutlama_e2e.png', import.meta.url).path
 await page.click('#celClose');
 assert.equal(await page.$eval('#celebrate', e => e.hidden), true);
 
+// 6. Weekly day count instead of a streak; finished plan hides the CTA and shows the rest card
+await page.click('[data-go="bugun"]');
+assert.match(await page.$eval('#streak', e => e.textContent), /Bu hafta \d \/ 7 gün/, 'weekly day count');
+assert.equal(await page.$eval('#cta', e => e.hidden), false, 'cta visible while the plan is open');
+await page.evaluate(() => { const g = {}; g[new Date().toLocaleDateString('sv-SE')] = { hata: 3, avci: 5, bulmaca: 5 }; localStorage.setItem('gun', JSON.stringify(g)); });
+await page.goto(URL_ + '#bugun'); await page.reload();
+await page.waitForFunction(() => window.koc?.S.loaded, { timeout: 20000 });
+assert.equal(await page.$eval('#cta', e => e.hidden), true, 'cta hidden when the plan is done');
+assert.equal(await page.$eval('#restCard', e => e.hidden), false, 'rest card shown');
+
 assert.deepEqual(errors, [], 'no page errors');
 await browser.close();
 console.log('OK: e2e passes');
