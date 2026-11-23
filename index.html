@@ -351,6 +351,7 @@
             <button class="chip" type="button" data-ask="nasıl düşünmeliyim">Nasıl düşünmeliyim?</button>
             <button class="chip" type="button" data-ask="pat">Pat nedir?</button>
           </div>
+          <div class="chips" id="askSug" hidden></div>
         </form>
         <p class="engine" id="engine"></p>
       </div>
@@ -576,12 +577,15 @@ const SOZLUK = [
   [['tehdit', 'nasıl düşün', 'şat', 'hata'], `ŞAT: Önce rakibe bak: Rakip neyi Tehdit ediyor? Sonra kendine sor: Şah çekebilir miyim? Alabileceğim taş var mı? ${KONTROL}`],
   [['oyun sonu', 'son oyun'], 'Oyun sonunda şahını oyuna sok, piyonlarını ilerlet. Rakibin sadece şahı kaldıysa pat yapmamaya dikkat et.'],
 ];
-const SOZLUK_KONULAR = 'pat, mat, çatal, açmaz, şiş, rok, geçerken alma, terfi, taş değerleri, açılış, asılı taş, oyun sonu';
+// Hand-written Turkish fold (toLowerCase would turn İ into i + combining dot).
+const foldTr = s => s.replace(/[ÇçŞşĞğİIıÖöÜü]/g, c => ({ Ç: 'c', ç: 'c', Ş: 's', ş: 's', Ğ: 'g', ğ: 'g', İ: 'i', I: 'i', ı: 'i', Ö: 'o', ö: 'o', Ü: 'u', ü: 'u' })[c]).toLowerCase();
 function answer(q) {
-  const t = q.toLocaleLowerCase('tr');
-  const hits = SOZLUK.filter(([keys]) => keys.some(k => t.includes(k))).map(([, s]) => s);
+  const t = foldTr(q);
+  const hits = SOZLUK.filter(([keys]) => keys.some(k => t.includes(foldTr(k)))).map(([, s]) => s);
   return hits.length ? hits : null;
 }
+// Unanswered questions list: newest last, at most 50.
+const addQuestion = (list, q, d) => [...list, { q, d }].slice(-50);
 
 // What is in danger in this position, for the side to move.
 function dangerReport(fen) {
@@ -1586,7 +1590,13 @@ function ask(q) {
     return coachSay(parts.join(' ') || 'Şu an asılı taş ya da mat tehdidi görmüyorum. Şah çekebilir misin, bir bak.', parts.length ? 'wow' : 'happy');
   }
   const a = answer(q);
-  coachSay(a ? a.join(' ') : `Bunu henüz bilmiyorum. Bana şunları sorabilirsin: ${SOZLUK_KONULAR}.`, a ? 'happy' : 'think');
+  $('askSug').hidden = true;
+  if (a) return coachSay(a.join(' '), 'happy');
+  store.set('sorular', addQuestion(store.get('sorular', []), q.slice(0, 200), today()));
+  coachSay('Bunu henüz bilmiyorum. Ailene soralım, not aldım.', 'think');
+  $('askSug').innerHTML = shuffle([...SOZLUK]).slice(0, 3).map(([k]) => `<button class="chip" type="button" data-ask="${escHtml(k[0])}">${escHtml(k[0].replace(/^./, c => c.toLocaleUpperCase('tr')))} nedir?</button>`).join('');
+  $('askSug').hidden = false;
+  $('askSug').querySelectorAll('[data-ask]').forEach(b => b.onclick = () => ask(b.dataset.ask));
 }
 $('askForm').onsubmit = e => { e.preventDefault(); ask($('askIn').value); $('askIn').value = ''; };
 document.querySelectorAll('[data-ask]').forEach(b => b.onclick = () => ask(b.dataset.ask));
@@ -1704,6 +1714,8 @@ async function renderVeli() {
           ${revs.length ? `<table><tr><th>Maç</th><th>Nasıldı</th><th>Tahmini</th><th>Kendi dersi</th></tr>${revs.slice(0, 6).map(r => `<tr><td>${new Date(r.gameAt || r.t).toLocaleDateString('tr-TR')}</td><td>${escHtml(r.his || '–')}</td><td>${['Farklı yer', 'Yakın', 'Tam isabet'][r.puan] ?? '–'}</td><td>${escHtml(r.ders)}</td></tr>`).join('')}</table>` : ''}</section>`;
       })()}
       <section class="sheet"><h2>Son 10 oyun</h2><table><tr><th>Tarih</th><th>Hız</th><th>Rakip</th><th>Sonuç</th><th class="n">Süre</th><th></th></tr>${recent}</table></section>
+      <section class="sheet"><h2>Puhu’nun bilemediği sorular</h2><p class="sub">Çocuğun Puhu’ya sorup cevap bulunamayanlar. Yalnız bu cihaz, son 50.</p>
+        ${store.get('sorular', []).length ? `<ul id="bilinmeyen">${store.get('sorular', []).slice(-10).reverse().map(x => `<li>${escHtml(x.q)} <small>(${escHtml(x.d)})</small></li>`).join('')}</ul>` : '<p class="sub">Henüz yok.</p>'}</section>
       <section class="sheet"><h2>Velinin kontrol listesi</h2><p class="sub">Elle işaretlenir, yalnız bu cihazda saklanır.</p>
         ${KONTROL_LISTESI.map(([k, t]) => `<label style="display:block;margin:6px 0"><input type="checkbox" data-kontrol="${k}"${store.get('veliKontrol', {})[k] ? ' checked' : ''}> ${t}</label>`).join('')}</section>
       <section class="sheet"><h2>İlerleme yedeği</h2><p class="sub">Yıldızlar, günlük çalışma, ustalık ve tekrar kayıtları. Oyunlar ve rakipler dosyaya girmez.</p>

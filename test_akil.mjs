@@ -11,7 +11,7 @@ const block = html.split('// AKIL-BASLA')[1].split('// AKIL-BITIR')[0];
 const dir = mkdtempSync(join(tmpdir(), 'akil-'));
 const file = join(dir, 'akil.mjs');
 const chessUrl = pathToFileURL(join(process.cwd(), 'node_modules/chess.js/dist/esm/chess.js')).href;
-writeFileSync(file, `import { Chess } from '${chessUrl}';\n${block}\nexport { explain, hangingPieces, leitnerNext, isBeaten, pickTheme, makeStalemateTrap, thinkTimes, sayable, answer, dangerReport, parentMetrics, KINDS, difficultyFor, gameStats, pendingReviews, reviewTruth, guessScore, reviewPgn, monthBuckets, weekDays, weekStart, weekWork, normBest, KONTROL, thinkNote, rakipGozu, oppLabel, packProgress, unpackProgress };`);
+writeFileSync(file, `import { Chess } from '${chessUrl}';\n${block}\nexport { explain, hangingPieces, leitnerNext, isBeaten, pickTheme, makeStalemateTrap, thinkTimes, sayable, answer, dangerReport, parentMetrics, KINDS, difficultyFor, gameStats, pendingReviews, reviewTruth, guessScore, reviewPgn, monthBuckets, weekDays, weekStart, weekWork, normBest, KONTROL, thinkNote, rakipGozu, oppLabel, packProgress, unpackProgress, foldTr, addQuestion };`);
 const A = await import(pathToFileURL(file).href);
 
 const cases = [
@@ -110,6 +110,14 @@ assert.equal(A.sayable('Şah çekebilir miyim? Kale!'), 'Şah çekebilir miyim? 
 assert.match(A.answer('Çatal nedir?')[0], /^Çatal:/);
 assert.match(A.answer('ROK NASIL YAPILIR')[0], /^Rok:/);
 assert.equal(A.answer('uzay gemisi'), null);
+assert.equal(A.foldTr('ÇŞĞİIıÖÜ çşğöü'), 'csgiiiou csgou');
+assert.match(A.answer('catal nedir')[0], /^Çatal:/);
+assert.match(A.answer('ACMAZ NEDIR')[0], /^Açmaz:/);
+assert.match(A.answer('SIS')[0], /^Şiş:/);
+assert.equal(A.addQuestion([], 'x', 'd').length, 1);
+const many = Array.from({ length: 50 }, (_, i) => ({ q: 'q' + i, d: 'd' }));
+const more = A.addQuestion(many, 'yeni', 'd');
+assert.equal(more.length, 50); assert.equal(more.at(-1).q, 'yeni'); assert.equal(more[0].q, 'q1');
 
 // danger report for the side to move
 const d1 = A.dangerReport('4k3/8/8/8/8/2b5/8/R6K w - - 0 1');          // my rook a1 hangs to the bishop

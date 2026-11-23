@@ -86,7 +86,11 @@ await page.click('[data-ask="tehlike"]');
 assert.ok((await say()).length > 20, 'danger report spoken');
 await page.type('#askIn', 'uzay gemisi');
 await page.click('#askForm button[type="submit"]');
-assert.match(await say(), /henüz bilmiyorum/);
+assert.match(await say(), /Ailene soralım, not aldım/);
+assert.equal((await page.$$('#askSug [data-ask]')).length, 3, '3 suggestion buttons');
+await page.type('#askIn', 'catal nedir');
+await page.click('#askForm button[type="submit"]');
+assert.match(await say(), /^Çatal:/, 'folded question: ' + await say());
 
 // 3c. Parent dashboard: gate rejects a wrong answer, accepts the right one, KPIs render
 await page.click('[data-go="veli"]');
@@ -102,6 +106,7 @@ assert.equal(await page.$$eval('#veliBody .kpi', k => k.at(-1).querySelector('sp
 assert.match(await page.$eval('#veliBody', e => e.textContent), /yalnız analizli oyunlar/);
 assert.doesNotMatch(await page.$$eval('#veliBody .kpi', k => k.find(x => /Puhu ile çalışma/.test(x.textContent)).textContent), /dakika/);
 assert.equal(await page.$$eval('#veliBody svg.chart', s => s.length) >= 1, true, 'weekly chart drawn');
+assert.match(await page.$eval("#veliBody", e => e.textContent), /bilemediği sorular[^]*uzay gemisi/, "unknown question listed for parent");
 await page.screenshot({ path: new URL('./veli_e2e.png', import.meta.url).pathname.replace(/^\//, ''), fullPage: true });
 
 // 3d. Post-game review: feeling -> own guess -> Puhu's finding -> lesson saved; home shows the lesson
