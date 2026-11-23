@@ -580,8 +580,10 @@ const SOZLUK = [
 // Hand-written Turkish fold (toLowerCase would turn İ into i + combining dot).
 const foldTr = s => s.replace(/[ÇçŞşĞğİIıÖöÜü]/g, c => ({ Ç: 'c', ç: 'c', Ş: 's', ş: 's', Ğ: 'g', ğ: 'g', İ: 'i', I: 'i', ı: 'i', Ö: 'o', ö: 'o', Ü: 'u', ü: 'u' })[c]).toLowerCase();
 function answer(q) {
-  const t = foldTr(q);
-  const hits = SOZLUK.filter(([keys]) => keys.some(k => t.includes(foldTr(k)))).map(([, s]) => s);
+  const t = foldTr(q), words = t.split(/[^a-z0-9]+/);
+  // short keys (pat, mat, şat, rok) match whole words only: "satranç" is not ŞAT, "kapat" is not pat
+  const hit = k => { const f = foldTr(k); return f.length <= 3 ? words.includes(f) : t.includes(f); };
+  const hits = SOZLUK.filter(([keys]) => keys.some(hit)).map(([, s]) => s);
   return hits.length ? hits : null;
 }
 // Unanswered questions list: newest last, at most 50.
@@ -745,8 +747,8 @@ function reviewPgn(g, { guess, truth, lesson, feeling }) {
     const no = Math.floor(i / 2) + 1;
     out.push(i % 2 === 0 ? `${no}. ${san}` : afterComment ? `${no}... ${san}` : san);
     const notes = [];
-    if (i === guess && i === truth) notes.push('Benim tahminim doğruydu: en büyük hatam bu.');
-    else { if (i === guess) notes.push('Benim tahminim: en büyük hatam bu.'); if (i === truth) notes.push('Puhu: asıl hata bu hamleydi.'); }
+    if (i === guess && i === truth) notes.push('Benim tahminim doğruydu: fırsat burada kaçtı.');
+    else { if (i === guess) notes.push('Benim tahminim: fırsat burada kaçtı.'); if (i === truth) notes.push('Puhu: asıl hata bu hamleydi.'); }
     if (notes.length) out.push(`{${notes.join(' ')}}`);
     afterComment = notes.length > 0;
   });
@@ -1463,7 +1465,7 @@ function showPly() {
 function askGuess() {
   R.step = 2;
   const n = positions(R.g).length - 1;
-  coachSay('Maçı geri sar. Sence en büyük hatan hangi hamleydi? O hamleye gel ve düğmeye bas. Puhu’nun cevabını sonra göreceğiz.', 'think');
+  coachSay('Maçı geri sar. Sence fırsatı en çok hangi hamlede kaçırdın? O hamleye gel ve düğmeye bas. Puhu’nun cevabını sonra göreceğiz.', 'think');
   $('macPanel').innerHTML = `
     <div class="mac-nav">
       <button class="btn" type="button" data-nav="first" aria-label="Başa dön">⏮</button>
@@ -1473,7 +1475,7 @@ function askGuess() {
       <button class="btn" type="button" data-nav="last" aria-label="Sona git">⏭</button>
     </div>
     <p class="status" id="macMove"></p>
-    <div class="actions"><button class="btn" type="button" id="macClean">Büyük hata yapmadım</button><button class="btn primary" type="button" id="macPick">En büyük hatam bu hamle</button></div>`;
+    <div class="actions"><button class="btn" type="button" id="macClean">Kaçan fırsat yok</button><button class="btn primary" type="button" id="macPick">Fırsat bu hamlede kaçtı</button></div>`;
   const nav = { first: () => 0, prev: () => Math.max(0, R.v - 1), next: () => Math.min(n, R.v + 1), last: () => n };
   $('macPanel').querySelectorAll('[data-nav]').forEach(b => b.onclick = () => { R.v = nav[b.dataset.nav](); showPly(); });
   $('macSlider').oninput = e => { R.v = +e.target.value; showPly(); };
@@ -1498,14 +1500,14 @@ async function revealTruth() {
   R.m = R.truth != null ? ms.find(x => x.ply === R.truth) || mistakeAt(g, R.truth, a?.best || null, a?.judgment?.comment || '') : null;
   let text;
   if (R.truth == null) {
-    text = R.guess == null ? 'Ben de büyük bir hata görmedim. Harika maç!' : 'Ben bu maçta büyük bir hata görmedim. Senin seçtiğin anı yine de derse çevirebiliriz.';
+    text = R.guess == null ? 'Ben de kaçan bir fırsat görmedim. Harika maç!' : 'Ben bu maçta kaçan bir fırsat görmedim. Senin seçtiğin anı yine de derse çevirebiliriz.';
   } else {
     R.v = R.truth; showPly();
     if (R.m?.best) arrow(R.m.best);
     const why = R.m ? ` ${R.m.ex.text}` : '';
-    text = R.score === 2 ? `Tam isabet! En büyük hatan gerçekten ${moveLabel(R.truth)} hamlesiydi.${why}`
-      : R.score === 1 ? `Çok yaklaştın! Asıl hata ${moveLabel(R.truth)} hamlesiydi.${why}`
-      : R.guess == null ? `Bu maçta bir büyük hata vardı: ${moveLabel(R.truth)}.${why}`
+    text = R.score === 2 ? `Tam isabet! Fırsat gerçekten ${moveLabel(R.truth)} hamlesinde kaçmıştı.${why}`
+      : R.score === 1 ? `Çok yaklaştın! Fırsat ${moveLabel(R.truth)} hamlesinde kaçmıştı.${why}`
+      : R.guess == null ? `Bu maçta bir fırsat kaçtı: ${moveLabel(R.truth)}.${why}`
       : `Puhu başka bir yerde gördü: ${moveLabel(R.truth)}.${why}`;
     if (R.m?.best) text += ` Oktaki hamle daha iyiydi.`;
   }

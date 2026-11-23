@@ -114,6 +114,10 @@ assert.equal(A.foldTr('ÇŞĞİIıÖÜ çşğöü'), 'csgiiiou csgou');
 assert.match(A.answer('catal nedir')[0], /^Çatal:/);
 assert.match(A.answer('ACMAZ NEDIR')[0], /^Açmaz:/);
 assert.match(A.answer('SIS')[0], /^Şiş:/);
+// short keys (3 letters or fewer) match whole words only
+for (const q of ['satranç nedir', 'kapat', 'matematik']) assert.ok(!(A.answer(q) || []).some(a => /^(ŞAT|Pat|Mat):/.test(a)), q);
+assert.match(A.answer('pat nedir')[0], /^Pat/);
+assert.match(A.answer('şat nedir')[0], /ŞAT/);
 assert.equal(A.addQuestion([], 'x', 'd').length, 1);
 const many = Array.from({ length: 50 }, (_, i) => ({ q: 'q' + i, d: 'd' }));
 const more = A.addQuestion(many, 'yeni', 'd');
@@ -182,7 +186,7 @@ assert.equal(d3.mateThreat, 'd1');
   const pgn = A.reviewPgn({ ...base, id: 'p', createdAt: now, winner: 'black', players: { white: { user: { id: 'kid', name: 'Kid' } }, black: { user: { id: 'x', name: 'Rival' } } } },
     { guess: 4, truth: 6, lesson: 'Hamleden önce {rakibe} bak', feeling: 'Zordu' });
   assert.match(pgn, /\[White "Kid"\]/); assert.match(pgn, /\[Result "0-1"\]/);
-  assert.match(pgn, /3\. Bc4 \{Benim tahminim: en büyük hatam bu\.\}/);
+  assert.match(pgn, /3\. Bc4 \{Benim tahminim: fırsat burada kaçtı\.\}/);
   assert.match(pgn, /4\. Ng5 \{Puhu: asıl hata bu hamleydi\.\}/);
   assert.match(pgn, /\{Dersim: Hamleden önce \(rakibe\) bak\. Maç: Zordu\.\} 0-1$/);   // braces inside a comment are escaped
 }
@@ -270,8 +274,6 @@ assert.equal(A.unpackProgress('not json'), null);
 assert.equal(A.unpackProgress('{"app":"other","data":{}}'), null);
 assert.deepEqual(A.unpackProgress(JSON.stringify({ app: 'puhu-koc', v: 1, data: { stars: { d: 1 }, token: 'x', srs: 5 } })), { stars: { d: 1 } });
 
-console.log('OK: all brain tests pass');
-
 // P13: per-speed score of the last 30 days, parent note only
 {
   const now = 100 * 864e5, mk = (speed, winner, day = 90) => ({ speed, winner, createdAt: day * 864e5, players: { white: { user: { id: 'kid' } }, black: { user: { id: 'x' } } } });
@@ -283,3 +285,5 @@ console.log('OK: all brain tests pass');
   assert.match(note, /bullet 2 oyun %0/); assert.match(note, /rapid 3 oyun %50/); assert.match(note, /Önerilen tempo: 15\+10 rapid/);
   assert.equal(A.speedNote(A.speedScores([], 'kid', now)), '');
 }
+
+console.log('OK: all brain tests pass');
