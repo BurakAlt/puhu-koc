@@ -1015,14 +1015,16 @@ function addMateCards() {
     if (m) S.mistakes.push(m);
   }
 }
+// Progress counts only standard games against people: computer levels and set-up positions are practice, not the measure.
+const humanGame = g => g.variant === 'standard' && !g.players.white.aiLevel && !g.players.black.aiLevel;
 function trendHtml() {
   if (!S.stats) return '<section><h2>Gelişim</h2><p class="sub">Puhu oyunlarını ölçüyor…</p></section>';
-  const st = S.games.map(g => S.stats[g.id]).filter(s => s && s.ownMoves).sort((a, b) => b.createdAt - a.createdAt);
+  const st = S.games.filter(humanGame).map(g => S.stats[g.id]).filter(s => s && s.ownMoves).sort((a, b) => b.createdAt - a.createdAt);
   const agg = a => { const o = a.reduce((s, x) => s + x.ownMoves, 0); return { n: a.length, loss: o ? a.reduce((s, x) => s + x.loss, 0) * 100 / o : 0, am: a.filter(x => x.allowedMate).length, mm: a.filter(x => x.missedMate).length }; };
   const last = agg(st.slice(0, 20)), prev = agg(st.slice(20, 40));
   const row = (name, a, b) => `<tr><td>${name}</td><td class="n">${a}</td><td class="n">${b}</td></tr>`;
   return `<section><h2>Gelişim</h2>
-    <p class="sub">Motor gerektirmeyen ölçüm, bütün oyunlarından. Son ${last.n} oyun ile önceki ${prev.n} oyun.</p>
+    <p class="sub">Motor gerektirmeyen ölçüm, insanlara karşı oynadığın oyunlardan (bilgisayara karşı oyunlar sayılmaz). Son ${last.n} oyun ile önceki ${prev.n} oyun.</p>
     <table><tr><th>Ölçüt</th><th class="n">Son 20</th><th class="n">Önceki 20</th></tr>
       ${row('100 hamlede kaybedilen malzeme (piyon = 1)', n1(last.loss), n1(prev.loss))}
       ${row('Rakibe 1 hamlede mat fırsatı verdiği oyun', last.am, prev.am)}
