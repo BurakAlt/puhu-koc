@@ -171,6 +171,7 @@ await page.goto(URL_ + '#bugun'); await page.reload();
 await page.waitForFunction(() => window.koc?.S.loaded, { timeout: 20000 });
 assert.equal(await page.$eval('#cta', e => e.hidden), true, 'cta hidden when the plan is done');
 assert.equal(await page.$eval('#restCard', e => e.hidden), false, 'rest card shown');
+assert.match(await page.$eval('#restCard', e => e.textContent), /Bugünlük bitti! Şimdi Lichess'te rapid bir oyun oyna ya da dinlen\./, 'rest card text');
 
 // 7. E7: wrong move then mode switch within 100 ms: the stale timer must not touch the board or throw
 await page.click('[data-go="hata"]');

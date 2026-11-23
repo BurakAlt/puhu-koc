@@ -11,7 +11,7 @@ const block = html.split('// AKIL-BASLA')[1].split('// AKIL-BITIR')[0];
 const dir = mkdtempSync(join(tmpdir(), 'akil-'));
 const file = join(dir, 'akil.mjs');
 const chessUrl = pathToFileURL(join(process.cwd(), 'node_modules/chess.js/dist/esm/chess.js')).href;
-writeFileSync(file, `import { Chess } from '${chessUrl}';\n${block}\nexport { explain, hangingPieces, leitnerNext, isBeaten, pickTheme, makeStalemateTrap, thinkTimes, sayable, answer, dangerReport, parentMetrics, KINDS, difficultyFor, gameStats, pendingReviews, reviewTruth, guessScore, reviewPgn, monthBuckets, weekDays, weekStart, weekWork, normBest, KONTROL, thinkNote, rakipGozu, oppLabel, packProgress, unpackProgress, foldTr, addQuestion };`);
+writeFileSync(file, `import { Chess } from '${chessUrl}';\n${block}\nexport { explain, hangingPieces, leitnerNext, isBeaten, pickTheme, makeStalemateTrap, thinkTimes, sayable, answer, dangerReport, parentMetrics, KINDS, difficultyFor, gameStats, pendingReviews, reviewTruth, guessScore, reviewPgn, monthBuckets, weekDays, weekStart, weekWork, normBest, KONTROL, thinkNote, rakipGozu, oppLabel, packProgress, unpackProgress, foldTr, addQuestion, speedScores, speedNote };`);
 const A = await import(pathToFileURL(file).href);
 
 const cases = [
@@ -271,3 +271,15 @@ assert.equal(A.unpackProgress('{"app":"other","data":{}}'), null);
 assert.deepEqual(A.unpackProgress(JSON.stringify({ app: 'puhu-koc', v: 1, data: { stars: { d: 1 }, token: 'x', srs: 5 } })), { stars: { d: 1 } });
 
 console.log('OK: all brain tests pass');
+
+// P13: per-speed score of the last 30 days, parent note only
+{
+  const now = 100 * 864e5, mk = (speed, winner, day = 90) => ({ speed, winner, createdAt: day * 864e5, players: { white: { user: { id: 'kid' } }, black: { user: { id: 'x' } } } });
+  const gs = [mk('bullet', 'black'), mk('bullet', 'black'), mk('blitz', 'white'), mk('rapid', 'white'), mk('rapid', undefined), mk('rapid', 'black'), mk('rapid', 'white', 10)];
+  const sc = A.speedScores(gs, 'kid', now);
+  assert.deepEqual(sc.bullet, { n: 2, pct: 0 }); assert.deepEqual(sc.blitz, { n: 1, pct: 100 });
+  assert.deepEqual(sc.rapid, { n: 3, pct: 50 });                          // old game (day 10) excluded, draw = half
+  const note = A.speedNote(sc);
+  assert.match(note, /bullet 2 oyun %0/); assert.match(note, /rapid 3 oyun %50/); assert.match(note, /Önerilen tempo: 15\+10 rapid/);
+  assert.equal(A.speedNote(A.speedScores([], 'kid', now)), '');
+}

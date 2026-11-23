@@ -315,7 +315,7 @@
         <ol class="steps" id="steps"></ol>
         <div class="rest" id="restCard" hidden>
           <span class="rest-pose" id="restPose"></span>
-          <p><b>Bugünlük harika çalıştın.</b> Beynin doydu. Şimdi evde biriyle tahtada bir oyun oynamaya ne dersin? Yarın Puhu yeni pozisyonlarla burada.</p>
+          <p><b>Bugünlük bitti!</b> Şimdi Lichess'te rapid bir oyun oyna ya da dinlen.</p>
         </div>
         <button class="btn primary big" id="cta">Antrenmana başla</button>
       </div>
@@ -611,6 +611,20 @@ function weekWork(gun, incel, now) {
   for (const [d, v] of Object.entries(gun)) if (d >= key) for (const k of ['hata', 'avci', 'bulmaca']) out[k] += v[k] || 0;
   out.mac = Object.values(incel).filter(r => r.t >= ws).length;
   return out;
+}
+// Parent-only tempo note: games and score % per speed over the last 30 days (draw = half). Never said to the child.
+function speedScores(games, me, now) {
+  const out = { bullet: { n: 0, pts: 0 }, blitz: { n: 0, pts: 0 }, rapid: { n: 0, pts: 0 } };
+  for (const g of games) {
+    const o = out[g.speed === 'ultraBullet' ? 'bullet' : g.speed];
+    if (!o || now - g.createdAt > 30 * 864e5) continue;
+    o.n++; o.pts += !g.winner ? 0.5 : g.winner === (g.players.white.user?.id === me ? 'white' : 'black') ? 1 : 0;
+  }
+  return Object.fromEntries(Object.entries(out).map(([k, o]) => [k, { n: o.n, pct: o.n ? Math.round(o.pts / o.n * 100) : 0 }]));
+}
+function speedNote(sc) {
+  const parts = Object.entries(sc).filter(([, o]) => o.n).map(([k, o]) => `${k} ${o.n} oyun %${o.pct}`);
+  return parts.length ? `Son 30 gün skoru: ${parts.join(', ')}. Önerilen tempo: 15+10 rapid.` : '';
 }
 function parentMetrics(games, me, now, nWeeks = 12) {
   const WEEK = 7 * 864e5, first = weekStart(now) - (nWeeks - 1) * WEEK;
@@ -1676,6 +1690,7 @@ async function renderVeli() {
   const kpi = (label, value, note) => `<div class="kpi"><span>${label}</span><b>${value}</b><small>${note}</small></div>`;
   const notes = [];
   if (m.last30.total && m.last30.fastShare > 0.5) notes.push(`Son 30 günde oyunlarının %${Math.round(m.last30.fastShare * 100)}'i hızlı (bullet/blitz). Düşünmeye vakit kalan 15+10 rapid oyunlar gelişime daha çok katkı verir.`);
+  const sn = speedNote(speedScores(S.games, S.me, now)); if (sn) notes.push(sn);
   if (m.last30.late >= 3) notes.push(`Son 30 günde ${m.last30.late} oyun gece 22:00 ile sabah 06:00 arasında oynanmış.`);
   if (tw.games >= 25) notes.push(`Bu hafta ${tw.games} oyun oynadı. Çok oyun az inceleme demek olabilir; Puhu’daki “Hatalarım” bölümüne zaman ayırması iyi olur.`);
   if (b.recent != null && b.before != null) notes.push(`Son 10 analizli oyunda büyük hata ortalaması ${n1(b.recent)}, önceki 10 oyunda ${n1(b.before)}. Bu sayı yalnız analiz istenen oyunlardan gelir ve yanıltabilir; asıl ölçüt Karnem’deki eğilim tablosudur.`);
