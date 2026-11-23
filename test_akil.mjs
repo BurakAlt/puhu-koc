@@ -244,7 +244,7 @@ assert.equal(d3.mateThreat, 'd1');
   assert.ok(slow.endsWith(A.KONTROL) && /30/.test(slow) && /20/.test(slow), slow);
   assert.doesNotMatch(slow, /acele|iyi|sez/i, 'fact only, no diagnosis');
   const fast = A.thinkNote({ n: 6, bl: 5, ok: 20 });
-  assert.match(fast, /bak/); assert.doesNotMatch(fast, /acele/i);
+  assert.ok(fast.endsWith(A.KONTROL), fast); assert.doesNotMatch(fast, /acele/i);   // one routine, one wording
   assert.equal(A.thinkNote({ n: 4, bl: 30, ok: 20 }), '');
   assert.equal(A.thinkNote({ n: 9, bl: 22, ok: 20 }), '');
 }

@@ -785,7 +785,7 @@ function thinkNote(t) {
   if (t.n < 5) return '';
   const fact = `Hata yaptığın hamlelerde genelde <b>${Math.round(t.bl)} saniye</b> düşünmüşsün, diğerlerinde ${Math.round(t.ok)} saniye.`;
   if (t.bl > t.ok * 1.25) return `${fact} ${KONTROL}`;
-  if (t.bl < t.ok * 0.75) return `${fact} Hamleni oynamadan önce bir an rakibin taşlarına bak.`;
+  if (t.bl < t.ok * 0.75) return `${fact} ${KONTROL}`;
   return '';
 }
 // Wrong answer told from the opponent's side (P12): '<move> ile rakip ... yapabiliyor. Bir de rakip gözüyle bak.'
