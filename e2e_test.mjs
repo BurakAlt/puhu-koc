@@ -30,7 +30,7 @@ await page.evaluate(() => localStorage.clear());
 // 1. Hatalarım: wrong move first (a legal non-best move), then the best move
 const { best, fen, kind } = await page.evaluate(() => ({ best: koc.T.it.best, fen: koc.T.it.fen, kind: koc.T.it.ex.kind }));
 console.log('hata item:', kind, best);
-if (best) {
+if (best && kind !== 'pat') {                                           // pat cards accept any non-stalemate move, so 'wrong = not best' is not wrong there
   await page.click('[data-ask="tehlike"]');
   const g = await say();
   assert.match(g, /senin görevin/, 'danger chip must not answer before the card is solved: ' + g);
@@ -63,6 +63,8 @@ for (let i = 0; i < 3 && !(await page.evaluate(() => koc.P.theme === 'patTrap' &
   await new Promise(r => setTimeout(r, 400));
 }
 await page.waitForFunction(() => koc.P.fen && koc.P.theme === 'patTrap', { timeout: 5000 });
+await page.click('[data-ask="tehlike"]');                              // danger chip before the puzzle is solved: still the child's task
+assert.match(await say(), /senin görevin/, 'danger chip silent in an open puzzle: ' + await say());
 const { mate, pat } = await page.evaluate(() => {
   const c = new koc.Chess(koc.P.fen); let mate, pat;
   for (const m of c.moves({ verbose: true })) { c.move(m); if (c.isCheckmate()) mate = m.from + m.to; else if (c.isStalemate()) pat = m.from + m.to; c.undo(); }

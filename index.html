@@ -412,6 +412,13 @@ const KINDS = {
     yaz: x => x.bestSan ? `Bu hamle oyunu zorlaştırdı. Daha iyisi ${trSan(x.bestSan)} idi.` : 'Bu hamle oyunu zorlaştırdı.' },
 };
 
+// Lichess writes castling as king-takes-own-rook (e8h8); chess.js only knows e8g8.
+function normBest(fen, uci) {
+  if (!uci) return uci;
+  const c = new Chess(fen), k = c.get(uci.slice(0, 2)), r = c.get(uci.slice(2, 4));
+  if (k?.type !== 'k' || r?.type !== 'r' || r.color !== k.color) return uci;
+  return uci[0] + uci[1] + (uci[2] > uci[0] ? 'g' : 'c') + uci[3] + uci.slice(4);
+}
 function playUci(chess, uci) {
   try { return chess.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || 'q' }); } catch { return null; }
 }
@@ -956,6 +963,7 @@ function positions(g) {
 function mistakeAt(g, i, best, comment) {
   const pos = positions(g);
   if (!pos[i + 1]) return null;
+  best = normBest(pos[i].fen, best);
   return { key: `${g.id}:${i}`, g, ply: i, fen: pos[i].fen, last: pos[i].last, playedSan: pos[i + 1].san, best, ex: explain(pos[i].fen, pos[i + 1].uci, best, comment) };
 }
 function buildMistakes() {
@@ -1513,7 +1521,7 @@ function ask(q) {
   q = q.trim();
   if (!q) return;
   if (q === 'tehlike') {
-    const open = S.mode === 'avci' ? !H.done : S.mode === 'hata' ? !T.done : S.mode === 'bulmaca' && P.step < (P.sol?.length ?? 1);
+    const open = S.mode === 'avci' ? !H.done : S.mode === 'hata' ? !T.done : S.mode === 'bulmaca' && (P.step ?? 0) < (P.sol?.length ?? 1);
     if (open) return coachSay('Bunu bulmak senin görevin! Takılırsan İpucu düğmesine bas.', 'think');
     const r = dangerReport(B.fen()), parts = [];
     if (r.inCheck) parts.push('Şahın tehdit altında! Önce onu kurtar.');

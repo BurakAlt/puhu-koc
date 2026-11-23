@@ -11,7 +11,7 @@ const block = html.split('// AKIL-BASLA')[1].split('// AKIL-BITIR')[0];
 const dir = mkdtempSync(join(tmpdir(), 'akil-'));
 const file = join(dir, 'akil.mjs');
 const chessUrl = pathToFileURL(join(process.cwd(), 'node_modules/chess.js/dist/esm/chess.js')).href;
-writeFileSync(file, `import { Chess } from '${chessUrl}';\n${block}\nexport { explain, hangingPieces, leitnerNext, isBeaten, pickTheme, makeStalemateTrap, thinkTimes, sayable, answer, dangerReport, parentMetrics, KINDS, difficultyFor, gameStats, pendingReviews, reviewTruth, guessScore, reviewPgn, monthBuckets, weekDays, weekStart, weekWork };`);
+writeFileSync(file, `import { Chess } from '${chessUrl}';\n${block}\nexport { explain, hangingPieces, leitnerNext, isBeaten, pickTheme, makeStalemateTrap, thinkTimes, sayable, answer, dangerReport, parentMetrics, KINDS, difficultyFor, gameStats, pendingReviews, reviewTruth, guessScore, reviewPgn, monthBuckets, weekDays, weekStart, weekWork, normBest };`);
 const A = await import(pathToFileURL(file).href);
 
 const cases = [
@@ -202,6 +202,16 @@ assert.equal(d3.mateThreat, 'd1');
   assert.deepEqual(A.weekWork({}, {}, now), { hata: 0, avci: 0, bulmaca: 0, mac: 0 });
   const inc = { a: { t: now - 864e5 }, b: { t: now - 20 * 864e5 }, c: {} };
   assert.equal(A.weekWork({}, inc, now).mac, 1);              // old and undated reviews are not counted
+}
+
+{ // normBest: Lichess writes castling as king-takes-rook (e8h8); chess.js wants e8g8
+  const f = 'r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1';
+  assert.equal(A.normBest(f, 'e1h1'), 'e1g1');
+  assert.equal(A.normBest(f, 'e1a1'), 'e1c1');
+  assert.equal(A.normBest('r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R b KQkq - 0 1', 'e8h8'), 'e8g8');
+  assert.equal(A.normBest(f, 'a1a2'), 'a1a2');                 // ordinary move untouched
+  assert.equal(A.normBest(f, 'e1f1'), 'e1f1');                 // king step untouched
+  assert.equal(A.normBest(f, null), null);
 }
 
 console.log('OK: all brain tests pass');
